@@ -830,7 +830,16 @@ const BANK_REGISTRY = {
     file_format: 'zip_csv',
     needs_password: false,
     pos_keywords: ['BRI DEBIT', 'BRI VISA', 'BRI MASTER', 'BRI DEBIT/QR', 'BRI JCB CARD', 'BRI AMEX', 'BRI CARD'],
-    pos_match_rule: 'simple',
+    // v8: BRI pakai jenis_mapping. Jenis bank (CREDIT/DEBIT/QRIS) di-derive dari
+    // kolom TIPE CSV detail via classifyBriTipe() → disimpan di bankRow.kartu_jenis.
+    //   - POS "BRI VISA/MASTER/AMEX/CARD/JCB" → bank kartu_jenis = CREDIT
+    //   - POS "BRI DEBIT" / "BRI DEBIT/QR"    → bank kartu_jenis = DEBIT atau QRIS
+    pos_match_rule: 'jenis_mapping',
+    pos_jenis_map: {
+      CREDIT: /VISA|MASTER|AMEX|CARD|JCB/,
+      DEBIT:  /DEBIT/,
+      QRIS:   /DEBIT/,   // QRIS BRI ter-post sebagai "BRI DEBIT" di POS
+    },
     validator: null,       // diisi setelah fungsi-fungsi didefinisikan (lihat di bawah)
     parserSpec: { func: null, extract: 'zip_csv', needsTids: false, needsMids: false },
     summary_group_by: 'remark_rk',
@@ -843,7 +852,16 @@ const BANK_REGISTRY = {
     needs_password: true,
     default_password: '009143',
     pos_keywords: ['BCA VISA', 'BCA MASTER', 'BCA DEBIT', 'BCA AMEX', 'BCA CARD', 'BCA DEBIT/QR', 'BCA JCB CARD', 'BCA AMEX CARD'],
-    pos_match_rule: 'simple',
+    // v8: BCA pakai jenis_mapping. Jenis bank diambil dari getBcaKartuType(tipe)
+    // di parser → disimpan di bankRow.kartu_jenis (uppercase: CREDIT/DEBIT/QRIS).
+    //   - POS "BCA VISA/MASTER/AMEX/CARD" → CREDIT
+    //   - POS "BCA DEBIT" / "BCA DEBIT/QR" → DEBIT atau QRIS
+    pos_match_rule: 'jenis_mapping',
+    pos_jenis_map: {
+      CREDIT: /VISA|MASTER|AMEX|CARD|JCB/,
+      DEBIT:  /DEBIT/,
+      QRIS:   /DEBIT/,   // QRIS BCA ter-post sebagai "BCA DEBIT" di POS
+    },
     validator: null,
     parserSpec: { func: null, extract: 'aes_zip_csv', needsTids: true, needsMids: false },
     summary_group_by: 'kartu',
@@ -1902,6 +1920,19 @@ function parsePOSAuto(text, posSystem) {
 // ============================================================
 // PARSER BRI DETAIL CSV
 // ============================================================
+// Klasifikasi TIPE BRI ke kategori CREDIT/DEBIT/QRIS untuk matching dengan label POS.
+// Sumber: kolom TIPE di CSV detail BRI (row[12]).
+// Aturan (urut prioritas):
+//   1. TIPE mengandung "QRIS"                → 'QRIS'  (mis: "11 QRIS")
+//   2. TIPE mengandung "DEBIT"/"NPG"/"ON-US" → 'DEBIT' (mis: "02 Debit-BRI", "07 Bank-Lain-NPG", "00/03 On-Us")
+//   3. Selain itu                            → 'CREDIT' (default, mis: "01 Bank-Lain", "09 Bank-Lain via JCB")
+function classifyBriTipe(tipe) {
+  const t = (tipe || '').toUpperCase();
+  if (t.includes('QRIS')) return 'QRIS';
+  if (t.includes('DEBIT') || t.includes('NPG') || t.includes('ON-US')) return 'DEBIT';
+  return 'CREDIT';
+}
+
 function parseBRIDetail(text) {
   const transactions = [];
   const rows = text.split(/\r?\n/).map(l => parseCsvLine(l));
@@ -1921,6 +1952,7 @@ function parseBRIDetail(text) {
         tipe: row[12], principle: row[13], issuer: row[14],
         aprv: row[15], batch_num: row[16],
         tgl_rk: row[18], bank: 'BRI',
+        kartu_jenis: classifyBriTipe(row[12]),  // BARU v8: untuk pos_jenis_map
       });
     } catch (e) { /* skip */ }
   }
@@ -2015,6 +2047,7 @@ function parseBCADetail(text, allowedTids) {
         issuer: card_type === 'D' ? 'DEBIT' : (tipe === 'TQ' ? 'QRIS' : 'CREDIT'),
         batch_num: '',
         tipe_full: tipe,                // simpan tipe asli BCA
+        kartu_jenis: getBcaKartuType(tipe).toUpperCase(),  // BARU v8: CREDIT/DEBIT/QRIS untuk pos_jenis_map
       });
     } else if (tipe === 'SC' || tipe === 'SD' || tipe === 'AS') {
       // Settlement summary entries (untuk Summary sheet)
@@ -2896,14 +2929,17 @@ function isPosExactForBankRow(pos, bankRow, bankCode) {
     return true;
   }
 
-  // === JENIS MAPPING (BNI) ===
+  // === JENIS MAPPING (BNI, Mandiri, BCA, BRI di v8) ===
   // POS DEBIT bisa nyangkut di BANK jenis QRIS/TAPCASH. Pakai pos_jenis_map untuk
   // tentukan regex apa yang harus dicocokkan untuk tiap jenis bank.
   if (cfg.pos_match_rule === 'jenis_mapping') {
     const map = cfg.pos_jenis_map || {};
     const desc = (pos.payment_type || '').toUpperCase();
-    // bankRow.tipe → 'KREDIT' / 'DEBIT' / 'QRIS' / 'TAPCASH' (BNI) atau 'Credit'/'Debit'/'QRIS' (BCA)
-    const jenis = (bankRow.bni_jenis || bankRow.tipe || '').toUpperCase();
+    // Prioritas field bank-side (v8):
+    //   1. kartu_jenis  → BRI (derived dari TIPE), BCA (derived dari getBcaKartuType)
+    //   2. bni_jenis    → BNI (KREDIT/DEBIT/QRIS/TAPCASH)
+    //   3. tipe         → Mandiri (CREDIT/DEBIT/QRIS) — fallback umum
+    const jenis = (bankRow.kartu_jenis || bankRow.bni_jenis || bankRow.tipe || '').toUpperCase();
 
     const regex = map[jenis];
     if (!regex) return true;  // jenis tidak terdaftar di map → lenient (mark exact)
@@ -3207,7 +3243,7 @@ function renderResults(results, unmatchPos, bankCode, bankSettlements) {
     <div class="card review">
       <div class="card-label">Match Review</div>
       <div class="card-value">${reviewList.length}</div>
-      <div class="card-sub">Label POS salah</div>
+      <div class="card-sub">Label POS / sub-jenis salah</div>
     </div>
     <div class="card ambig">
       <div class="card-label">Ambiguous</div>
@@ -3960,7 +3996,25 @@ function buildNotesFor(r, bankCode) {
   const notes = [];
   const p = r.pos;
   if (r.status === 'MATCH_REVIEW' && p) {
-    notes.push(`⚠ Label POS salah: "${p.payment_type}" padahal bayar via ${bankCode}`);
+    // v8: bedakan 2 jenis mismatch
+    //  (a) cross-bank: label POS punya bank lain (mis: "BCA VISA" tapi ketemu di file MANDIRI)
+    //  (b) sub-label sama-bank: label POS bank-nya benar, tapi sub-jenis kartu beda
+    //      (mis: POS "MANDIRI VISA" tapi bank tipe DEBIT)
+    const posDesc = (p.payment_type || '').toUpperCase();
+    const cfg = BANK_REGISTRY[bankCode] || {};
+    const posKeywords = cfg.pos_keywords || [];
+    // Cek: apakah POS desc mengandung salah satu pos_keyword bank ini?
+    // Kalau ya → bank-nya udah benar, mismatch-nya di sub-label.
+    const posIsForThisBank = posKeywords.some(kw => posDesc.includes(kw.toUpperCase()));
+
+    if (posIsForThisBank) {
+      // Sub-label sama-bank — jenis kartu beda
+      const bankJenis = (r.bank.kartu_jenis || r.bank.bni_jenis || r.bank.tipe || '').toUpperCase();
+      notes.push(`⚠ Sub-jenis kartu beda: POS "${p.payment_type}" → bank jenis ${bankJenis}`);
+    } else {
+      // Cross-bank — bank di label POS berbeda dari bank yang sedang direkon
+      notes.push(`⚠ Bank di label POS beda: "${p.payment_type}" → ketemu di file ${bankCode}`);
+    }
   }
   if (r.status === 'AMBIGUOUS' || r.status === 'AMBIGUOUS_REVIEW') {
     const candStr = (r.candidates || []).map(c => `Bill #${c.bill_no} ${c.payment_type} (${c.pos_date})`).join(' | ');
@@ -4679,24 +4733,11 @@ function buildAllTrxSheet(wb, results, bankCode, outletName) {
       bankVals = [b.tgl_trx, b.tgl_rk, b.tipe_full || b.tipe || '', b.aprv || '', b.card || '', b.principle || '', b.issuer || '', b.amt_trx, b.disc_amt, b.net_amt];
     }
     
-    // Notes
-    const notes = [];
-    if (r.status === 'MATCH_REVIEW' && p) {
-      notes.push(`Label POS salah: "${p.payment_type}" padahal bayar via ${bankCode}`);
-    }
-    if (r.status === 'AMBIGUOUS' || r.status === 'AMBIGUOUS_REVIEW') {
-      const candStr = (r.candidates || []).map(c => `Bill #${c.bill_no} ${c.payment_type} (${c.pos_date})`).join(' | ');
-      notes.push(`Multi candidates: ${candStr}`);
-    }
-    if (r.status === 'UNMATCH_BANK') {
-      notes.push('Tidak ada kandidat POS — cek outlet lain atau missing entry');
-    }
-    if (r.other_candidates && r.other_candidates.length > 0) {
-      notes.push(`Amount sama label berbeda: ${r.other_candidates.map(c => `Bill #${c.bill_no} (${c.payment_type})`).join(', ')}`);
-    }
+    // Notes — pakai buildNotesFor (single source of truth, sama dengan HTML render)
+    const notesStr = buildNotesFor(r, bankCode);
     
     // Write all cells
-    const allVals = [statusLabel, ...posVals, ...bankVals, notes.join(' | ')];
+    const allVals = [statusLabel, ...posVals, ...bankVals, notesStr];
     const posAmtIdx = 1 + 4; // 'Amount POS' adalah kolom ke-6 (0-indexed 5)
     const bankAmtStart = bankSecStart - 1;       // 0-indexed
     const bankAmtCount = bankCols.length;        // last 3 = gross/mdr/net
