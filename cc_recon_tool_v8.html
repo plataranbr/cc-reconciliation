@@ -1,0 +1,4863 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CC/QRIS Payment Reconciliation - Plataran</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<!-- zip.js untuk support AES-encrypted ZIP (file BCA berpassword) -->
+<script src="https://unpkg.com/@zip.js/zip.js@2.7.45/dist/zip-full.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --primary: #1F4E78;
+  --primary-light: #2E75B6;
+  --green: #C6EFCE;
+  --green-text: #006100;
+  --yellow: #FFEB9C;
+  --yellow-text: #9C5700;
+  --pink: #FFC7CE;
+  --pink-text: #9C0006;
+  --purple: #D9D2E9;
+  --purple-text: #5B3F8C;
+  --gray-50: #F8F9FA;
+  --gray-100: #F2F4F7;
+  --gray-200: #E5E7EB;
+  --gray-300: #D1D5DB;
+  --gray-500: #6B7280;
+  --gray-700: #374151;
+  --gray-900: #111827;
+  --border: #E5E7EB;
+  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-lg: 0 4px 12px rgba(0,0,0,0.08);
+}
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: var(--gray-50);
+  color: var(--gray-900);
+  min-height: 100vh;
+}
+
+/* ===== LOGIN ===== */
+.login-overlay {
+  position: fixed; inset: 0;
+  background: linear-gradient(135deg, var(--primary), var(--primary-light));
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+.login-card {
+  background: white;
+  padding: 48px;
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  width: 100%; max-width: 400px;
+  text-align: center;
+}
+.login-card h1 {
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--primary);
+}
+.login-card p {
+  color: var(--gray-500);
+  margin-bottom: 24px;
+  font-size: 14px;
+}
+.login-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+  margin-bottom: 16px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.login-input:focus { border-color: var(--primary); }
+.btn {
+  background: var(--primary);
+  color: white;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+}
+.btn:hover { background: var(--primary-light); transform: translateY(-1px); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.btn-secondary {
+  background: white;
+  color: var(--primary);
+  border: 2px solid var(--primary);
+}
+.btn-secondary:hover { background: var(--gray-50); }
+.login-error {
+  color: var(--pink-text);
+  font-size: 13px;
+  margin-top: 8px;
+  display: none;
+}
+
+/* ===== MAIN APP ===== */
+.app { display: none; }
+.app.visible { display: block; }
+
+header {
+  background: white;
+  border-bottom: 1px solid var(--border);
+  padding: 16px 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+header h1 {
+  font-size: 18px;
+  color: var(--primary);
+  font-weight: 600;
+}
+header h1 small {
+  color: var(--gray-500);
+  font-weight: 400;
+  font-size: 13px;
+  margin-left: 8px;
+}
+.header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.btn-icon {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--gray-700);
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+.btn-icon:hover { background: var(--gray-100); }
+
+main {
+  padding: 32px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* ===== STEPS ===== */
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.step {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: var(--shadow);
+}
+.step-num {
+  display: inline-block;
+  width: 28px; height: 28px;
+  background: var(--primary);
+  color: white;
+  border-radius: 50%;
+  text-align: center;
+  line-height: 28px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.step h3 {
+  font-size: 14px;
+  margin-bottom: 12px;
+  color: var(--gray-700);
+}
+.form-group { margin-bottom: 12px; }
+.form-group label {
+  display: block;
+  font-size: 12px;
+  color: var(--gray-500);
+  margin-bottom: 4px;
+}
+.form-control {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+}
+.form-control:focus { border-color: var(--primary); }
+
+.drop-zone {
+  border: 2px dashed var(--gray-300);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 13px;
+  color: var(--gray-500);
+  background: var(--gray-50);
+}
+.drop-zone:hover, .drop-zone.dragover {
+  border-color: var(--primary);
+  background: rgba(31, 78, 120, 0.04);
+  color: var(--primary);
+}
+.drop-zone.has-file {
+  border-color: var(--green-text);
+  background: rgba(0, 97, 0, 0.04);
+  color: var(--green-text);
+  font-weight: 500;
+}
+.drop-zone input { display: none; }
+
+/* Validation status box di bawah drop zone */
+.validation-status {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  display: none;
+  line-height: 1.4;
+}
+.validation-status.visible { display: block; }
+.validation-status.ok {
+  background: var(--green);
+  color: var(--green-text);
+  border: 1px solid var(--green-text);
+}
+.validation-status.err {
+  background: var(--pink);
+  color: var(--pink-text);
+  border: 1px solid var(--pink-text);
+}
+.validation-status.warn {
+  background: var(--yellow);
+  color: var(--yellow-text);
+  border: 1px solid var(--yellow-text);
+}
+
+/* ===== RESULTS ===== */
+.results {
+  display: none;
+  margin-top: 24px;
+}
+.results.visible { display: block; }
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+.card-label {
+  font-size: 11px;
+  color: var(--gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+.card-value {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--gray-900);
+}
+.card-sub {
+  font-size: 12px;
+  color: var(--gray-500);
+  margin-top: 4px;
+}
+.card.exact { border-left: 4px solid var(--green-text); }
+.card.review { border-left: 4px solid var(--yellow-text); }
+.card.ambig { border-left: 4px solid var(--purple-text); }
+.card.unmatch { border-left: 4px solid var(--pink-text); }
+.card.exact .card-value { color: var(--green-text); }
+.card.review .card-value { color: var(--yellow-text); }
+.card.ambig .card-value { color: var(--purple-text); }
+.card.unmatch .card-value { color: var(--pink-text); }
+
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.actions .btn { width: auto; }
+
+/* ===== TABS ===== */
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.tab {
+  padding: 10px 20px;
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--gray-500);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+.tab:hover { color: var(--gray-900); }
+.tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* ===== TABLE ===== */
+.table-wrap {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow-x: auto;
+  box-shadow: var(--shadow);
+  max-height: 600px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+thead {
+  position: sticky;
+  top: 0;
+  background: var(--primary);
+  z-index: 10;
+}
+th {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: white;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border-right: 1px solid rgba(255,255,255,0.1);
+  white-space: nowrap;
+}
+th.section { background: var(--primary-light); text-align: center; }
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+th.sortable:hover {
+  background: var(--primary-light);
+}
+.sort-arrow {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 9px;
+  opacity: 0.5;
+  vertical-align: middle;
+}
+.sort-arrow.active {
+  opacity: 1;
+  font-size: 11px;
+}
+td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--gray-200);
+  color: var(--gray-700);
+  white-space: nowrap;
+}
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.note { white-space: normal; min-width: 250px; font-size: 11px; color: var(--gray-500); }
+tr.exact td:first-child { border-left: 3px solid var(--green-text); }
+tr.review td:first-child { border-left: 3px solid var(--yellow-text); }
+tr.ambig td:first-child { border-left: 3px solid var(--purple-text); }
+tr.unmatch td:first-child { border-left: 3px solid var(--pink-text); }
+tr.subtotal td { background: var(--yellow); font-weight: 600; }
+tr.grand td { background: var(--primary); color: white; font-weight: 700; }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.badge.exact { background: var(--green); color: var(--green-text); }
+.badge.review { background: var(--yellow); color: var(--yellow-text); }
+.badge.ambig { background: var(--purple); color: var(--purple-text); }
+.badge.unmatch { background: var(--pink); color: var(--pink-text); }
+
+/* ===== LOG / STATUS ===== */
+.log {
+  background: var(--gray-900);
+  color: #A6E3A1;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin: 16px 0;
+  max-height: 200px;
+  overflow-y: auto;
+  display: none;
+}
+.log.visible { display: block; }
+.log .info { color: #89B4FA; }
+.log .warn { color: #F9E2AF; }
+.log .err { color: #F38BA8; }
+
+.empty {
+  text-align: center;
+  padding: 60px;
+  color: var(--gray-500);
+}
+
+/* ===== UTIL ===== */
+.muted { color: var(--gray-500); font-size: 12px; }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-overlay" id="loginScreen">
+  <div class="login-card">
+    <h1>CC/QRIS Recon Tool</h1>
+    <p>Hutan Kota Plataran · BRI</p>
+    <input type="password" class="login-input" id="loginInput" placeholder="Masukkan password" autofocus>
+    <button class="btn" onclick="checkLogin()">Masuk</button>
+    <div class="login-error" id="loginError">Password salah</div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div class="app" id="app">
+  <header>
+    <h1>CC/QRIS Payment Reconciliation <small>v1.1 (refactored) · Plataran</small></h1>
+    <div class="header-actions">
+      <span class="muted" id="bankInfo">Bank: BRI · Outlet: Hutan Kota</span>
+      <button class="btn-icon" onclick="logout()">Keluar</button>
+    </div>
+  </header>
+  
+  <main>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h3>Pilih Bank & Outlet</h3>
+        <div class="form-group">
+          <label>Bank</label>
+          <select class="form-control" id="bankSelect">
+            <!-- Auto-populated from BANK_REGISTRY -->
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Outlet</label>
+          <select class="form-control" id="outletSelect">
+            <!-- Auto-populated from OUTLET_REGISTRY -->
+          </select>
+        </div>
+        <div class="form-group" id="passwordGroup" style="display:none;">
+          <label>Password ZIP (BCA)</label>
+          <input type="text" class="form-control" id="bankPassword" placeholder="Password untuk extract ZIP">
+        </div>
+      </div>
+      
+      <div class="step">
+        <div class="step-num">2</div>
+        <h3>Upload File POS</h3>
+        <div class="drop-zone" id="posDropZone" onclick="document.getElementById('posInput').click()">
+          <input type="file" id="posInput" accept=".txt,.csv" onchange="onPosFile(event)">
+          <div id="posDropText">📄 Klik atau drop file POS (.txt / .csv) di sini</div>
+        </div>
+        <div class="validation-status" id="posValidationStatus"></div>
+        <p class="muted" style="margin-top:8px;">Format: F/O Journal Transaction</p>
+      </div>
+      
+      <div class="step">
+        <div class="step-num">3</div>
+        <h3>Upload File Bank</h3>
+        <div class="drop-zone" id="bankDropZone" onclick="document.getElementById('bankInput').click()">
+          <input type="file" id="bankInput" accept=".zip,.csv" multiple onchange="onBankFiles(event)">
+          <div id="bankDropText">🗜️ Klik atau drop file .zip bank (boleh multiple)</div>
+        </div>
+        <div class="validation-status" id="bankValidationStatus"></div>
+        <p class="muted" style="margin-top:8px;" id="bankFileHint">Bisa upload beberapa file sekaligus</p>
+      </div>
+    </div>
+    
+    <div class="actions">
+      <button class="btn" id="processBtn" onclick="runReconciliation()" disabled>Process & Reconcile</button>
+      <button class="btn btn-secondary" onclick="resetAll()">Reset</button>
+    </div>
+    
+    <div class="log" id="log"></div>
+    
+    <!-- RESULTS -->
+    <div class="results" id="results">
+      <div class="summary-cards" id="summaryCards"></div>
+      
+      <div class="actions">
+        <button class="btn" onclick="downloadExcel()">📥 Download Excel Report</button>
+      </div>
+      
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('summary')">Summary</button>
+        <button class="tab" onclick="switchTab('allTrx')">All Transactions <span id="tabAllCount"></span></button>
+        <button class="tab" onclick="switchTab('unmatchPos')">Unmatch POS <span id="tabUPCount"></span></button>
+      </div>
+      
+      <div class="tab-content active" id="tab-summary"></div>
+      <div class="tab-content" id="tab-allTrx"></div>
+      <div class="tab-content" id="tab-unmatchPos"></div>
+    </div>
+  </main>
+</div>
+
+<script>
+'use strict';
+
+// ============================================================
+// CONFIG
+// ============================================================
+const APP_PASSWORD = 'plataran2026'; // ganti sesuai kebijakan
+const SESSION_KEY = 'cc_recon_auth';
+
+// ============================================================
+// ============================================================
+// ★★★★★ OUTLET REGISTRY — EDIT DI SINI UNTUK ENABLE / TAMBAH OUTLET ★★★★★
+// ============================================================
+// Konsep: 1 entry = 1 unit POS (file txt sendiri). 1 unit bisa membawahi
+// beberapa sub-outlet (mis. PLS = Hutan Kota + Langit Senayan + dll).
+// UI tetap simple: 1 dropdown = 1 unit. Sub-outlet hanya internal untuk mapping TID.
+//
+// Field:
+//  - display_name:  Nama yang muncul di dropdown UI
+//  - filename:      Nama file VHP (suffix match dengan separator: _, -, /, \)
+//  - pos_system:    'VHP' (txt) atau 'VHP_CLOUD' (csv, belum di-support)
+//  - enabled:       true = bisa dipilih di dropdown
+//  - sub_outlets:   Array sub-outlet, masing-masing bisa punya bca_tid sendiri
+//  - banks:         Per bank:
+//                     BRI: { mids: [...] } — MID langsung
+//                     BCA: { mid: '...' } — MID umum, TID-nya diambil dari sub_outlets
+//                     BNI: { mids: [...] } — MID langsung (1 MID cover semua sub-outlet)
+//
+// ┌─────────────────────────────────────────────────────────────────┐
+// │ TEMPLATE — copy-paste block ini saat ENABLE outlet baru:        │
+// │                                                                 │
+// │  KODE: {                                                        │
+// │    display_name: 'Nama Lengkap Outlet',                         │
+// │    filename: 'KODE.txt', pos_system: 'VHP', enabled: true,      │
+// │    sub_outlets: [                                               │
+// │      { name: 'Sub Outlet 1', bca_tid: '000XXXXXX' },            │
+// │      { name: 'Sub Outlet 2', bca_tid: '000YYYYYY' },            │
+// │    ],                                                           │
+// │    banks: {                                                     │
+// │      BRI: { mids: ['XXXXXXXXXXXX'] },                           │
+// │      BCA: { mid: 'XXXXXX' },                                    │
+// │      BNI: { mids: ['XXXXXXXXX'] },                              │
+// │    }                                                            │
+// │  },                                                             │
+// │                                                                 │
+// │ Catatan: kalau salah satu bank belum ada datanya, isi banks: {} │
+// │ atau set enabled: false dulu sampai data lengkap.               │
+// └─────────────────────────────────────────────────────────────────┘
+const OUTLET_REGISTRY = {
+  PLS: {
+    display_name: 'Plataran Hutan Kota Senayan',
+    filename: 'PLS.txt', pos_system: 'VHP', enabled: true,
+    sub_outlets: [
+      { name: 'Hutan Kota Senayan', bca_tid: '000905019' },
+      { name: 'Langit Senayan',     bca_tid: '001632782' },
+      // Pidari & Tigadari — TID belum diketahui, tambah saat ditemukan
+    ],
+    banks: {
+      BRI: { mids: ['001999100857'] },
+      BCA: { mid: '009143' },
+      BNI: { mids: ['210324711'] },  // MID Hutan Kota Senayan (cover semua sub-outlet PLS)
+      MANDIRI: { mids: ['71001152530'] }  // PLATARAN HUTAN KOTA (1 MID cover semua sub-outlet PLS di Mandiri)
+    }
+  },
+  PLMT: {
+    display_name: 'Plataran Menteng', filename: 'PLMT.txt', pos_system: 'VHP', enabled: true,
+    sub_outlets: [
+      { name: 'Plataran Menteng', bca_tid: '000519759' },
+    ],
+    banks: {
+      BRI:     { mids: ['001999488454'] },
+      BCA:     { mid: '009143' },
+      BNI:     { mids: ['210068029'] },
+      MANDIRI: { mids: ['70400458781'] },
+    }
+  },
+  PLD: {
+    display_name: 'Plataran Dharmawangsa', filename: 'PLD.txt', pos_system: 'VHP', enabled: true,
+    sub_outlets: [
+      { name: 'Plataran Dharmawangsa', bca_tid: '000519755' },
+    ],
+    banks: {
+      BRI:     { mids: ['001999488452'] },
+      BCA:     { mid: '009143' },
+      BNI:     { mids: ['210167128'] },
+      MANDIRI: { mids: ['71863160335'] },
+    }
+  },
+  PATIO: {
+    display_name: 'PATIO', filename: 'PATIO.txt', pos_system: 'VHP', enabled: true,
+    sub_outlets: [
+      { name: 'PATIO', bca_tid: '000519660' },
+    ],
+    banks: {
+      BRI:     { mids: ['001999488943', '001999526411'] },
+      BCA:     { mid: '009143' },
+      BNI:     { mids: ['210066031'] },
+      MANDIRI: { mids: ['71863448956'] },
+    }
+  },
+  PLSMM: {
+    display_name: 'Plataran Summarecon Makassar', filename: 'PLSMM.txt', pos_system: 'VHP', enabled: true,
+    sub_outlets: [
+      { name: 'Plataran Summarecon Makassar', bca_tid: '003168068' },
+    ],
+    banks: {
+      BRI:     { mids: ['001999555409'] },
+      BCA:     { mid: '009143' },
+      BNI:     { mids: ['207007623'] },
+      MANDIRI: { mids: ['71854363225'] },
+    }
+  },
+  PGS: {
+    // PGS = Plataran Bandung. Tidak punya BCA MID di Excel (BCA TID '001899991' ada tapi MID kosong)
+    // → BCA disabled untuk PGS. Kalau nanti MID BCA ditemukan, tinggal tambah mid: '...'.
+    display_name: 'Plataran Bandung', filename: 'PGS.txt', pos_system: 'VHP', enabled: true,
+    sub_outlets: [],
+    banks: {
+      BRI:     { mids: ['001999284965'] },
+      BNI:     { mids: ['204901529'] },
+      MANDIRI: { mids: ['71863160242'] },
+    }
+  },
+  TD: {
+    display_name: 'Teras Dharmawangsa', filename: 'TD.txt', pos_system: 'VHP', enabled: true,
+    sub_outlets: [
+      { name: 'Teras Dharmawangsa', bca_tid: '000519757' },
+    ],
+    banks: {
+      BRI:     { mids: ['001999245025'] },
+      BCA:     { mid: '009143' },
+      BNI:     { mids: ['210066932'] },
+      MANDIRI: { mids: ['70400462243'] },
+    }
+  },
+  PIM: {
+    display_name: 'Teras Pondok Indah Mall', filename: 'PIM.txt', pos_system: 'VHP', enabled: true,
+    sub_outlets: [
+      { name: 'Teras Pondok Indah Mall', bca_tid: '002199669' },
+    ],
+    banks: {
+      BRI:     { mids: ['001999379058'] },
+      BCA:     { mid: '009143' },
+      BNI:     { mids: ['214904451'] },
+      MANDIRI: { mids: ['71536940243'] },
+    }
+  },
+  BXC: {
+    display_name: 'Teras Bintaro Exchange', filename: 'BXC.txt', pos_system: 'VHP', enabled: true,
+    sub_outlets: [
+      { name: 'Teras Bintaro Exchange', bca_tid: '002217127' },
+    ],
+    banks: {
+      BRI:     { mids: ['001999384540'] },
+      BCA:     { mid: '009143' },
+      BNI:     { mids: ['214904450'] },
+      MANDIRI: { mids: ['71536770701'] },
+    }
+  },
+  SMS: {
+    display_name: 'Teras Summarecon Serpong', filename: 'SMS.txt', pos_system: 'VHP', enabled: true,
+    sub_outlets: [
+      { name: 'Teras Summarecon Serpong', bca_tid: '002424136' },
+    ],
+    banks: {
+      BRI:     { mids: ['001999503303'] },
+      BCA:     { mid: '009143' },
+      BNI:     { mids: ['214906975'] },  // TID belum diketahui
+      MANDIRI: { mids: ['71864375683'] },
+    }
+  },
+  SMB: {
+    display_name: 'Teras Summarecon Bogor', filename: 'SMB.txt', pos_system: 'VHP', enabled: true,
+    sub_outlets: [
+      { name: 'Teras Summarecon Bogor', bca_tid: '002295537' },
+    ],
+    banks: {
+      BRI:     { mids: ['001999503302'] },
+      BCA:     { mid: '009143' },
+      BNI:     { mids: ['214904457'] },
+      MANDIRI: { mids: ['71864897004'] },
+    }
+  },
+  SUMABA: {
+    display_name: 'Teras Summarecon Bandung', filename: 'SUMABA.txt', pos_system: 'VHP', enabled: true,
+    sub_outlets: [
+      { name: 'Teras Summarecon Bandung', bca_tid: '002738063' },
+    ],
+    banks: {
+      BRI:     { mids: ['001999526412'] },
+      BCA:     { mid: '009143' },
+      BNI:     { mids: ['204903882'] },
+      MANDIRI: { mids: ['71863512708'] },
+    }
+  },
+  TPI: {
+    display_name: 'Teras Plaza Indonesia', filename: 'TPI.csv', pos_system: 'VHP_CLOUD', enabled: true,
+    sub_outlets: [
+      { name: 'Teras Plaza Indonesia', bca_tid: '004379120' },
+    ],
+    banks: {
+      BRI:     { mids: ['001999612211'] },
+      BCA:     { mid: '009143' },
+      BNI:     { mids: ['210905184'] },
+      MANDIRI: { mids: ['71994526215'] },
+    }
+  },
+  TSD: {
+    // TSD = Teras Sudirman. BRI MID belum diketahui → BRI disabled untuk TSD.
+    display_name: 'Teras Sudirman', filename: 'TSD.csv', pos_system: 'VHP_CLOUD', enabled: true,
+    sub_outlets: [
+      { name: 'Teras Sudirman', bca_tid: '004376148' },
+    ],
+    banks: {
+      BCA:     { mid: '009143' },
+      BNI:     { mids: ['210905183'] },  // TID belum diketahui
+      MANDIRI: { mids: ['71993923978'] },
+    }
+  },
+  TSBK: {
+    display_name: 'Teras Summarecon Bekasi', filename: 'TSBK.csv', pos_system: 'VHP_CLOUD', enabled: true,
+    sub_outlets: [
+      { name: 'Teras Summarecon Bekasi', bca_tid: '004379022' },
+    ],
+    banks: {
+      BRI:     { mids: ['001999606482'] },
+      BCA:     { mid: '009143' },
+      BNI:     { mids: ['215904866'] },
+      MANDIRI: { mids: ['71994526308'] },
+    }
+  },
+};
+
+// ============================================================
+// ★★★★★ BANK REGISTRY — EDIT DI SINI UNTUK TAMBAH BANK BARU ★★★★★
+// ============================================================
+// Konsep: semua hal yang BEDA antar-bank disimpan di sini.
+// Kode utama (validator, parser, render) baca dari registry — generic.
+//
+// Field tiap bank:
+//  - display_name:      Label di UI dropdown
+//  - enabled:           true = muncul di dropdown bank
+//  - file_format:       'zip_csv' | 'aes_zip_csv' | 'zip_xlsx' | 'csv'
+//                       Menentukan cara extract file (lihat loadBankFile()).
+//  - needs_password:    true = munculkan input password ZIP di UI
+//  - default_password:  Password default yang diisikan otomatis (kalau ada)
+//  - pos_keywords:      List keyword POS untuk bank ini.
+//                       Tambah keyword baru = cukup edit di sini.
+//                       Contoh: ['BCA VISA', 'BCA MASTER', 'BCA DEBIT', 'BCA AMEX', 'BCA CARD']
+//  - pos_match_rule:    'simple' | 'jenis_mapping'
+//                       'simple' = label POS == bankCode → exact (BRI, BCA, Mandiri biasanya).
+//                       'jenis_mapping' = pakai pos_jenis_map untuk handle case BNI
+//                       (POS DEBIT bisa nyangkut di JENIS QRIS/TAPCASH).
+//  - pos_jenis_map:     (hanya kalau pos_match_rule='jenis_mapping')
+//                       Map: { 'JENIS_BANK': /regex untuk match desc POS/ }
+//                       Contoh BNI: KREDIT→VISA/MASTER/AMEX, DEBIT→DEBIT, dst.
+//  - validator:         async function(bankFiles, outletCode, password) → { ok, message, ... }
+//                       Bertanggung jawab cek MID/TID match outlet.
+//  - parserSpec:        Konfigurasi parser. Kode dispatcher di runReconciliation()
+//                       akan handle extract file → parse → return rows.
+//                       Field:
+//                         - func: async function(file, opts) → { transactions, settlements?, ... }
+//                                 atau function(text) → array transaksi (untuk file CSV langsung)
+//                         - needsTids: true = parser butuh allowedTids set (BCA)
+//                         - needsMids: true = parser butuh allowedMids set (BNI)
+//                         - extract: 'zip_csv' | 'aes_zip_csv' | 'zip_native' | 'plain_text'
+//  - summary_group_by:  'remark_rk' | 'kartu' | 'jenis'
+//                       Menentukan grouping di Summary tab/sheet.
+//  - file_hint:         Petunjuk yang muncul di bawah upload file.
+//
+// ┌─────────────────────────────────────────────────────────────────┐
+// │ TEMPLATE — copy-paste saat tambah bank baru (mis. MANDIRI):     │
+// │                                                                 │
+// │  MANDIRI: {                                                     │
+// │    display_name: 'Mandiri',                                     │
+// │    enabled: false, // ubah ke true kalau sudah siap             │
+// │    file_format: 'zip_csv',                                      │
+// │    needs_password: false,                                       │
+// │    pos_keywords: ['MANDIRI DEBIT', 'MANDIRI MASTER',            │
+// │                   'MANDIRI VISA', 'MANDIRI QRIS'],              │
+// │    pos_match_rule: 'simple',                                    │
+// │    validator: null,         // tulis function-nya nanti         │
+// │    parserSpec: { func: null, extract: 'zip_csv' },              │
+// │    summary_group_by: 'remark_rk',                               │
+// │    file_hint: 'Upload ZIP harian Mandiri',                      │
+// │  },                                                             │
+// └─────────────────────────────────────────────────────────────────┘
+const BANK_REGISTRY = {
+  BRI: {
+    display_name: 'BRI',
+    enabled: true,
+    file_format: 'zip_csv',
+    needs_password: false,
+    pos_keywords: ['BRI DEBIT', 'BRI VISA', 'BRI MASTER', 'BRI DEBIT/QR', 'BRI JCB CARD', 'BRI AMEX', 'BRI CARD'],
+    // v8: BRI pakai jenis_mapping. Jenis bank (CREDIT/DEBIT/QRIS) di-derive dari
+    // kolom TIPE CSV detail via classifyBriTipe() → disimpan di bankRow.kartu_jenis.
+    //   - POS "BRI VISA/MASTER/AMEX/CARD/JCB" → bank kartu_jenis = CREDIT
+    //   - POS "BRI DEBIT" / "BRI DEBIT/QR"    → bank kartu_jenis = DEBIT atau QRIS
+    pos_match_rule: 'jenis_mapping',
+    pos_jenis_map: {
+      CREDIT: /VISA|MASTER|AMEX|CARD|JCB/,
+      DEBIT:  /DEBIT/,
+      QRIS:   /DEBIT/,   // QRIS BRI ter-post sebagai "BRI DEBIT" di POS
+    },
+    validator: null,       // diisi setelah fungsi-fungsi didefinisikan (lihat di bawah)
+    parserSpec: { func: null, extract: 'zip_csv', needsTids: false, needsMids: false },
+    summary_group_by: 'remark_rk',
+    file_hint: 'Bisa upload beberapa file sekaligus',
+  },
+  BCA: {
+    display_name: 'BCA',
+    enabled: true,
+    file_format: 'aes_zip_csv',
+    needs_password: true,
+    default_password: '009143',
+    pos_keywords: ['BCA VISA', 'BCA MASTER', 'BCA DEBIT', 'BCA AMEX', 'BCA CARD', 'BCA DEBIT/QR', 'BCA JCB CARD', 'BCA AMEX CARD'],
+    // v8: BCA pakai jenis_mapping. Jenis bank diambil dari getBcaKartuType(tipe)
+    // di parser → disimpan di bankRow.kartu_jenis (uppercase: CREDIT/DEBIT/QRIS).
+    //   - POS "BCA VISA/MASTER/AMEX/CARD" → CREDIT
+    //   - POS "BCA DEBIT" / "BCA DEBIT/QR" → DEBIT atau QRIS
+    pos_match_rule: 'jenis_mapping',
+    pos_jenis_map: {
+      CREDIT: /VISA|MASTER|AMEX|CARD|JCB/,
+      DEBIT:  /DEBIT/,
+      QRIS:   /DEBIT/,   // QRIS BCA ter-post sebagai "BCA DEBIT" di POS
+    },
+    validator: null,
+    parserSpec: { func: null, extract: 'aes_zip_csv', needsTids: true, needsMids: false },
+    summary_group_by: 'kartu',
+    file_hint: 'Bisa upload beberapa ZIP sekaligus (akan di-extract dengan password)',
+  },
+  BNI: {
+    display_name: 'BNI',
+    enabled: true,
+    file_format: 'zip_xlsx',
+    needs_password: false,
+    pos_keywords: ['BNI DEBIT', 'BNI VISA', 'BNI MASTER', 'BNI AMEX', 'BNI DEBIT/QR', 'BNI JCB CARD', 'BNI AMEX CARD', 'BNI CARD'],
+    pos_match_rule: 'jenis_mapping',
+    pos_jenis_map: {
+      // Bank "KREDIT" cocok kalau POS desc-nya VISA/MASTER/AMEX/CARD/JCB
+      KREDIT:  /VISA|MASTER|AMEX|CARD|JCB/,
+      // Bank "DEBIT" cocok kalau POS desc-nya DEBIT (termasuk "DEBIT/QR")
+      DEBIT:   /DEBIT/,
+      // QRIS & TAPCASH BNI ter-post sebagai "BNI DEBIT" / "BNI DEBIT/QR" di POS
+      QRIS:    /DEBIT/,
+      TAPCASH: /DEBIT/,
+    },
+    validator: null,
+    parserSpec: { func: null, extract: 'zip_native', needsTids: false, needsMids: true },
+    summary_group_by: 'jenis',
+    file_hint: 'Upload ZIP harian BNI (berisi 4 file: KREDIT/DEBIT/QRIS/TAPCASH). Bisa multiple ZIP.',
+  },
+  // ===== TAMBAH BANK BARU DI SINI (set enabled:false dulu sampai siap) =====
+  MANDIRI: {
+    display_name: 'Mandiri',
+    enabled: true,
+    file_format: 'aes_zip_csv',
+    needs_password: true,
+    default_password: '12600293',
+    pos_keywords: ['MANDIRI DEBIT', 'MANDIRI MASTER', 'MANDIRI VISA', 'MANDIRI DEBIT/QR', 'MANDIRI AMEX', 'MANDIRI CARD', 'MANDIRI JCB CARD', 'MANDIRI AMEX CARD'],
+    // Mandiri pakai jenis_mapping (mirror BNI):
+    //   - MANDIRI DEBIT / MANDIRI DEBIT/QR → match Card Type=Debit (CC file) + semua transaksi QR
+    //   - MANDIRI VISA/MASTER/AMEX/CARD/JCB → match Card Type=Credit
+    pos_match_rule: 'jenis_mapping',
+    pos_jenis_map: {
+      CREDIT: /VISA|MASTER|AMEX|CARD|JCB/,   // CC dengan Card Type=Credit
+      DEBIT:  /DEBIT/,                       // CC dengan Card Type=Debit (termasuk "DEBIT/QR")
+      QRIS:   /DEBIT/,                       // QR file → POS label dengan kata DEBIT
+    },
+    validator: null,       // di-wire di section ★ WIRING
+    // parserSpec.extract = 'mandiri_aes_zip' — flag custom, di-handle langsung
+    // di runReconciliation (karena Mandiri butuh logic khusus: 1 ZIP = 1 CSV,
+    // detect tipe dari nama file 403/408, dan ada section DETAIL + SUMMARY GROUP).
+    parserSpec: { func: null, extract: 'mandiri_aes_zip', needsTids: false, needsMids: true },
+    summary_group_by: 'batch_or_account',  // CC group by payment batch, QR group by bank account
+    file_hint: 'Upload ZIP harian Mandiri (1 ZIP = 1 CSV: CC_DEBIT atau QR). Bisa multiple ZIP. Password default sudah terisi.',
+  },
+  BTN:     { display_name: 'BTN',     enabled: false, pos_keywords: [] },
+  BSI:     { display_name: 'BSI',     enabled: false, pos_keywords: [] },
+  CIMB:    { display_name: 'CIMB',    enabled: false, pos_keywords: ['CIMB DEBIT', 'CIMB MASTER', 'CIMB VISA'] },
+};
+
+// ============================================================
+// BANK_REGISTRY HELPERS
+// ============================================================
+// POS_KEYWORDS auto-generated dari BANK_REGISTRY (tidak perlu edit manual lagi).
+function getAllPosKeywords() {
+  const all = [];
+  for (const code of Object.keys(BANK_REGISTRY)) {
+    const kws = BANK_REGISTRY[code].pos_keywords || [];
+    for (const k of kws) all.push(k);
+  }
+  return all;
+}
+
+// Identify bank dari description POS — pakai prefix match dari registry.
+// Return 'OTHER' kalau tidak ada bank yang cocok.
+function identifyBankFromRegistry(desc) {
+  const u = desc.toUpperCase();
+  for (const code of Object.keys(BANK_REGISTRY)) {
+    const kws = BANK_REGISTRY[code].pos_keywords || [];
+    for (const k of kws) {
+      if (u.startsWith(k.split(' ')[0])) return code;  // 'BCA VISA' → prefix 'BCA'
+    }
+  }
+  return 'OTHER';
+}
+
+// Cek apakah suatu desc match dengan keyword bank tertentu (untuk unknown keyword detector).
+// Return true kalau keyword POS bank tersebut terdeteksi cocok dengan desc.
+function isKnownPosKeyword(desc) {
+  const u = desc.toUpperCase();
+  return getAllPosKeywords().some(kw => u.includes(kw));
+}
+
+// Helper: cek apakah outlet support bank tertentu (untuk enable/disable dropdown bank)
+function outletSupportsBank(outletCode, bankCode) {
+  const o = OUTLET_REGISTRY[outletCode];
+  if (!o || !o.enabled) return false;
+  const b = o.banks[bankCode];
+  if (!b) return false;
+  if (bankCode === 'BRI') return b.mids && b.mids.length > 0;
+  if (bankCode === 'BCA') {
+    if (!b.mid) return false;
+    // Butuh setidaknya 1 sub_outlet dengan bca_tid
+    return o.sub_outlets && o.sub_outlets.some(s => s.bca_tid);
+  }
+  if (bankCode === 'BNI') return b.mids && b.mids.length > 0;
+  if (bankCode === 'MANDIRI') return b.mids && b.mids.length > 0;
+  return false;
+}
+
+// Helper: dapatkan semua TID BCA yang valid untuk unit ini
+function getBcaTidsForOutlet(outletCode) {
+  const o = OUTLET_REGISTRY[outletCode];
+  if (!o || !o.sub_outlets) return [];
+  return o.sub_outlets.filter(s => s.bca_tid).map(s => s.bca_tid);
+}
+
+// Helper: cari outlet berdasarkan TID BCA (untuk lookup TID asing)
+function findOutletByBcaTid(tid) {
+  for (const [code, o] of Object.entries(OUTLET_REGISTRY)) {
+    const sub = (o.sub_outlets || []).find(s => s.bca_tid === tid);
+    if (sub) return { code, outlet: o, sub };
+  }
+  return null;
+}
+
+function populateOutletDropdown() {
+  const select = document.getElementById('outletSelect');
+  const bankCode = document.getElementById('bankSelect').value;
+  select.innerHTML = '';
+  
+  // Untuk setiap outlet, cek apakah support bank yang dipilih
+  const codes = Object.keys(OUTLET_REGISTRY);
+  const enabled = codes.filter(c => OUTLET_REGISTRY[c].enabled && outletSupportsBank(c, bankCode))
+    .sort((a, b) => OUTLET_REGISTRY[a].display_name.localeCompare(OUTLET_REGISTRY[b].display_name));
+  const disabled = codes.filter(c => !(OUTLET_REGISTRY[c].enabled && outletSupportsBank(c, bankCode)))
+    .sort((a, b) => OUTLET_REGISTRY[a].display_name.localeCompare(OUTLET_REGISTRY[b].display_name));
+  
+  for (const code of enabled) {
+    const opt = document.createElement('option');
+    opt.value = code;
+    opt.textContent = OUTLET_REGISTRY[code].display_name;
+    select.appendChild(opt);
+  }
+  for (const code of disabled) {
+    const opt = document.createElement('option');
+    opt.value = code;
+    const o = OUTLET_REGISTRY[code];
+    let reason = '(coming soon)';
+    if (o.enabled && !outletSupportsBank(code, bankCode)) {
+      reason = `(${bankCode} belum di-setup)`;
+    }
+    opt.textContent = `${o.display_name} ${reason}`;
+    opt.disabled = true;
+    select.appendChild(opt);
+  }
+}
+
+// Populate dropdown Bank dari BANK_REGISTRY.
+// Enabled bank tampil normal, disabled bank tampil dengan tag "(coming soon)".
+function populateBankDropdown() {
+  const select = document.getElementById('bankSelect');
+  if (!select) return;
+  const prevValue = select.value;
+  select.innerHTML = '';
+
+  const codes = Object.keys(BANK_REGISTRY);
+  const enabled = codes.filter(c => BANK_REGISTRY[c].enabled);
+  const disabled = codes.filter(c => !BANK_REGISTRY[c].enabled);
+
+  for (const code of enabled) {
+    const opt = document.createElement('option');
+    opt.value = code;
+    opt.textContent = BANK_REGISTRY[code].display_name || code;
+    select.appendChild(opt);
+  }
+  for (const code of disabled) {
+    const opt = document.createElement('option');
+    opt.value = code;
+    opt.textContent = `${BANK_REGISTRY[code].display_name || code} (coming soon)`;
+    opt.disabled = true;
+    select.appendChild(opt);
+  }
+
+  // Restore previous selection kalau masih ada
+  if (prevValue && [...select.options].some(o => o.value === prevValue && !o.disabled)) {
+    select.value = prevValue;
+  }
+}
+
+// ============================================================
+// LOGIN
+// ============================================================
+window.addEventListener('DOMContentLoaded', () => {
+  populateBankDropdown();
+  populateOutletDropdown();
+  updatePasswordVisibility();
+  if (sessionStorage.getItem(SESSION_KEY) === 'ok') {
+    showApp();
+  }
+  document.getElementById('loginInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') checkLogin();
+  });
+  // Reset validasi & file kalau outlet diganti
+  document.getElementById('outletSelect').addEventListener('change', () => {
+    clearValidationStatus('pos');
+    clearValidationStatus('bank');
+    updateHeaderInfo();
+  });
+  document.getElementById('bankSelect').addEventListener('change', () => {
+    populateOutletDropdown();
+    updatePasswordVisibility();
+    clearValidationStatus('pos');
+    clearValidationStatus('bank');
+    updateHeaderInfo();
+  });
+  setupDropZones();
+  updateHeaderInfo();
+});
+
+function updatePasswordVisibility() {
+  const bank = document.getElementById('bankSelect').value;
+  const group = document.getElementById('passwordGroup');
+  const pwInput = document.getElementById('bankPassword');
+  const hint = document.getElementById('bankFileHint');
+  const cfg = BANK_REGISTRY[bank];
+
+  if (cfg && cfg.needs_password) {
+    group.style.display = 'block';
+    // Auto-fill default password kalau kosong
+    if (!pwInput.value && cfg.default_password) {
+      pwInput.value = cfg.default_password;
+    }
+  } else {
+    group.style.display = 'none';
+  }
+  hint.textContent = (cfg && cfg.file_hint) || 'Bisa upload beberapa file sekaligus';
+}
+
+function updateHeaderInfo() {
+  const outletCode = document.getElementById('outletSelect').value;
+  const bank = document.getElementById('bankSelect').value;
+  const outlet = OUTLET_REGISTRY[outletCode];
+  if (outlet) {
+    document.getElementById('bankInfo').textContent = `Bank: ${bank} · Outlet: ${outlet.display_name}`;
+  }
+}
+
+function checkLogin() {
+  const input = document.getElementById('loginInput').value;
+  if (input === APP_PASSWORD) {
+    sessionStorage.setItem(SESSION_KEY, 'ok');
+    showApp();
+  } else {
+    document.getElementById('loginError').style.display = 'block';
+  }
+}
+function showApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('app').classList.add('visible');
+}
+function logout() {
+  sessionStorage.removeItem(SESSION_KEY);
+  location.reload();
+}
+
+// ============================================================
+// VALIDATION FUNCTIONS
+// ============================================================
+
+function showValidationStatus(target, type, message) {
+  // target: 'pos' atau 'bank'; type: 'ok', 'err', 'warn'
+  const el = document.getElementById(target + 'ValidationStatus');
+  el.className = 'validation-status visible ' + type;
+  const icon = type === 'ok' ? '✅' : type === 'err' ? '❌' : '⚠️';
+  el.innerHTML = `${icon} ${message}`;
+}
+
+function clearValidationStatus(target) {
+  const el = document.getElementById(target + 'ValidationStatus');
+  el.className = 'validation-status';
+  el.innerHTML = '';
+}
+
+// Validasi nama file POS terhadap registry outlet (suffix match, case-insensitive)
+// Mis: outlet PLS expect 'PLS.txt'. Filename '1779259539689_PLS.txt' valid karena diakhiri 'PLS.txt'.
+function validatePosFilename(file, outletCode) {
+  const outlet = OUTLET_REGISTRY[outletCode];
+  if (!outlet) return { ok: false, message: `Outlet ${outletCode} tidak ada di registry.` };
+  
+  // VHP_CLOUD = CSV (outlet TPI, TSD, TSBK). VHP = TXT.
+  // Sekarang sudah didukung (parser parsePOSCloud), jadi validasi tetap berjalan.
+  
+  const filename = file.name.toLowerCase();
+  const expected = outlet.filename.toLowerCase();
+  
+  // Validasi: filename harus persis = expected, ATAU diakhiri "...{separator}{expected}"
+  // (separator: underscore, dash, atau path separator) supaya 'MYPLS.txt' tidak salah match 'PLS.txt'.
+  const isExactMatch = filename === expected;
+  const isPrefixedMatch = filename.length > expected.length
+                          && /[_\-\/\\]/.test(filename.slice(0, -expected.length).slice(-1))
+                          && filename.endsWith(expected);
+  
+  if (!isExactMatch && !isPrefixedMatch) {
+    // Cari outlet lain yang cocok dengan filename ini (kasih hint)
+    let hint = '';
+    for (const [code, o] of Object.entries(OUTLET_REGISTRY)) {
+      const oExpected = o.filename.toLowerCase();
+      const oExact = filename === oExpected;
+      const oPrefixed = filename.length > oExpected.length 
+                       && /[_\-\/\\]/.test(filename.slice(0, -oExpected.length).slice(-1))
+                       && filename.endsWith(oExpected);
+      if ((oExact || oPrefixed)) {
+        hint = ` Filename ini cocok untuk outlet ${o.display_name} (${o.filename}).`;
+        break;
+      }
+    }
+    return {
+      ok: false,
+      message: `Nama file <b>${file.name}</b> bukan untuk ${outlet.display_name}.<br>Seharusnya bernama <b>${outlet.filename}</b> atau berakhiran <b>_${outlet.filename}</b>.${hint}`
+    };
+  }
+  
+  return {
+    ok: true,
+    message: `<b>${file.name}</b> cocok untuk outlet <b>${outlet.display_name}</b> (POS system: ${outlet.pos_system})`
+  };
+}
+
+// Validasi MID dari hasil parsing bank CSV.
+// ============================================================
+// AES ZIP EXTRACTION (untuk BCA — pakai zip.js)
+// ============================================================
+async function extractAesZip(file, password) {
+  // Return array of { name, content } persis seperti extractZip biasa
+  const blobReader = new zip.BlobReader(file);
+  const zipReader = new zip.ZipReader(blobReader, { password });
+  try {
+    const entries = await zipReader.getEntries();
+    const results = [];
+    for (const entry of entries) {
+      if (entry.directory) continue;
+      // Hanya ambil CSV
+      if (!entry.filename.toLowerCase().endsWith('.csv')) continue;
+      try {
+        const text = await entry.getData(new zip.TextWriter('utf-8'));
+        results.push({ name: entry.filename, content: text });
+      } catch (e) {
+        // Kemungkinan password salah atau file corrupt
+        throw new Error(`Gagal extract ${entry.filename}: ${e.message}. Cek password.`);
+      }
+    }
+    return results;
+  } finally {
+    await zipReader.close();
+  }
+}
+
+// ============================================================
+// VALIDATION: Bank file dispatcher
+// ============================================================
+// Dispatcher generic — baca validator dari BANK_REGISTRY[bankCode].validator.
+// Tambah bank baru = isi BANK_REGISTRY[XXX].validator, tidak perlu sentuh dispatcher ini.
+async function validateBank(bankFiles, outletCode, bankCode, password) {
+  const cfg = BANK_REGISTRY[bankCode];
+  if (!cfg) return { ok: false, message: `Bank ${bankCode} tidak ada di registry.` };
+  if (!cfg.enabled) return { ok: false, message: `Bank ${bankCode} belum di-enable di registry.` };
+  if (typeof cfg.validator !== 'function') {
+    return { ok: false, message: `Validator untuk bank ${bankCode} belum diimplementasi.` };
+  }
+  return cfg.validator(bankFiles, outletCode, password);
+}
+
+// Validasi BRI: cek MID di kolom 0 CSV detail (struktur lama)
+async function validateBankBRI(bankFiles, outletCode) {
+  const outlet = OUTLET_REGISTRY[outletCode];
+  if (!outlet) return { ok: false, message: `Outlet ${outletCode} tidak ada di registry.` };
+  
+  const bankCfg = outlet.banks.BRI;
+  if (!bankCfg || !bankCfg.mids || bankCfg.mids.length === 0) {
+    return { ok: false, message: `MID BRI untuk ${outlet.display_name} belum terdaftar di registry.` };
+  }
+  
+  const allowedMids = new Set(bankCfg.mids);
+  const foundMids = new Set();
+  let totalRows = 0;
+  
+  for (const f of bankFiles) {
+    let csvs = [];
+    if (f.name.toLowerCase().endsWith('.zip')) {
+      csvs = await extractZip(f);
+    } else if (f.name.toLowerCase().endsWith('.csv')) {
+      const text = await readFileText(f);
+      csvs = [{ name: f.name, content: text }];
+    }
+    
+    for (const c of csvs) {
+      const rows = c.content.split(/\r?\n/);
+      // Skip 4 baris header
+      for (let i = 4; i < rows.length; i++) {
+        const cols = parseCsvLine(rows[i]);
+        if (!cols || cols.length < 1 || !cols[0] || cols[0] === 'END OF REPORT') continue;
+        const mid = cols[0].trim();
+        if (mid) { foundMids.add(mid); totalRows++; }
+      }
+    }
+  }
+  
+  if (totalRows === 0) {
+    return { ok: false, message: `Tidak ada baris transaksi yang terbaca dari file bank. Cek apakah file ZIP berisi CSV detail yang valid.` };
+  }
+  
+  const foreignMids = [...foundMids].filter(m => !allowedMids.has(m));
+  if (foreignMids.length > 0) {
+    const hints = [];
+    for (const m of foreignMids) {
+      for (const [code, o] of Object.entries(OUTLET_REGISTRY)) {
+        const b = o.banks.BRI;
+        if (b && b.mids && b.mids.includes(m)) { hints.push(`MID ${m} milik ${o.display_name}`); break; }
+      }
+    }
+    const hintStr = hints.length > 0 ? `<br>Detail: ${hints.join(', ')}.` : '';
+    return {
+      ok: false,
+      message: `MID di file bank tidak cocok dengan outlet <b>${outlet.display_name}</b>.<br>MID asing: <b>${foreignMids.join(', ')}</b>.<br>MID valid: <b>${[...allowedMids].join(', ')}</b>.${hintStr}`
+    };
+  }
+  
+  return {
+    ok: true,
+    message: `${bankFiles.length} file · ${totalRows} transaksi · MID <b>${[...foundMids].join(', ')}</b> cocok dengan <b>${outlet.display_name}</b>`,
+    totalRows, midSet: foundMids
+  };
+}
+
+// Validasi BCA: extract AES ZIP, cek MID dan filter TID
+async function validateBankBCA(bankFiles, outletCode, password) {
+  const outlet = OUTLET_REGISTRY[outletCode];
+  if (!outlet) return { ok: false, message: `Outlet ${outletCode} tidak ada di registry.` };
+  
+  const bankCfg = outlet.banks.BCA;
+  if (!bankCfg || !bankCfg.mid) {
+    return { ok: false, message: `MID BCA untuk ${outlet.display_name} belum terdaftar di registry.` };
+  }
+  
+  if (!password) {
+    return { ok: false, message: `Password ZIP BCA wajib diisi. Default: 009143` };
+  }
+  
+  const allowedMid = bankCfg.mid;
+  const allowedTids = new Set(getBcaTidsForOutlet(outletCode));
+  if (allowedTids.size === 0) {
+    return { ok: false, message: `Tidak ada TID BCA terdaftar untuk ${outlet.display_name}.` };
+  }
+  
+  // Stats
+  let totalRows = 0;
+  let plsRows = 0; // baris yang TID-nya match PLS
+  const foundMids = new Set();
+  const foundTids = new Map(); // tid -> { name, count }
+  const foreignMidRows = []; // baris dengan MID asing
+  
+  for (const f of bankFiles) {
+    let csvs = [];
+    if (f.name.toLowerCase().endsWith('.zip')) {
+      try {
+        csvs = await extractAesZip(f, password);
+      } catch (e) {
+        return { ok: false, message: `Gagal extract <b>${f.name}</b>: ${e.message}` };
+      }
+    } else if (f.name.toLowerCase().endsWith('.csv')) {
+      const text = await readFileText(f);
+      csvs = [{ name: f.name, content: text }];
+    }
+    
+    for (const c of csvs) {
+      const rows = c.content.split(/\r?\n/);
+      // BCA: cek apakah ada header (kolom 0 nama 'Card Number' atau sejenis)
+      let startIdx = 0;
+      if (rows[0] && /card|gross|outlet|tipe/i.test(rows[0])) startIdx = 1;
+      
+      for (let i = startIdx; i < rows.length; i++) {
+        // Auto-detect delimiter
+        const semiCount = (rows[i].match(/;/g) || []).length;
+        const commaCount = (rows[i].match(/,/g) || []).length;
+        const delim = semiCount >= commaCount ? ';' : ',';
+        
+        const cols = parseCsvLineGeneric(rows[i], delim);
+        if (!cols || cols.length < 28) continue;
+        
+        const mid = (cols[5] || '').trim().replace(/^0+/, '') || '0'; // remove leading zeros
+        const tid = (cols[7] || '').trim().replace(/^0+/, '');         // remove leading zeros  
+        const tipe = (cols[14] || '').trim();
+        const outletName = (cols[9] || '').trim();
+        
+        // Skip baris yang bukan transaksi (header artifact, empty)
+        if (!tipe) continue;
+        
+        // Hanya hitung T* (detail trx) untuk validation — S*/A* di-skip
+        if (tipe !== 'TC' && tipe !== 'TD' && tipe !== 'TQ') continue;
+        
+        // Normalize: BCA pakai MID 9143 atau 009143 di file? Cek dari data
+        // Allowed MID '009143' bisa muncul sebagai '9143' (tanpa leading zeros). 
+        // Normalize keduanya untuk perbandingan.
+        const normalizedAllowedMid = allowedMid.replace(/^0+/, '');
+        const midMatches = (mid === normalizedAllowedMid);
+        
+        if (!midMatches) {
+          foreignMidRows.push({ mid, outletName, tipe });
+          continue;
+        }
+        foundMids.add(mid);
+        totalRows++;
+        
+        // TID: normalize (file format '905019' = registry '000905019')
+        const tidPadded = tid.padStart(9, '0');
+        if (!foundTids.has(tidPadded)) foundTids.set(tidPadded, { name: outletName, count: 0 });
+        foundTids.get(tidPadded).count++;
+        
+        if (allowedTids.has(tidPadded)) plsRows++;
+      }
+    }
+  }
+  
+  if (totalRows === 0) {
+    return { ok: false, message: `Tidak ada baris transaksi BCA yang terbaca. Cek format file atau password.` };
+  }
+  
+  // Cek MID asing
+  if (foreignMidRows.length > 0) {
+    const uniqueForeign = [...new Set(foreignMidRows.map(r => r.mid))];
+    return {
+      ok: false,
+      message: `MID di file bank tidak cocok dengan outlet <b>${outlet.display_name}</b>.<br>MID di file: <b>${uniqueForeign.join(', ')}</b>.<br>MID valid: <b>${allowedMid}</b>.`
+    };
+  }
+  
+  if (plsRows === 0) {
+    const otherOutlets = [];
+    for (const [tid, info] of foundTids.entries()) {
+      otherOutlets.push(`${info.name} (TID ${tid}, ${info.count} trx)`);
+    }
+    return {
+      ok: false,
+      message: `Tidak ada transaksi untuk outlet <b>${outlet.display_name}</b> di file ini.<br>File berisi outlet lain: ${otherOutlets.join(', ')}`
+    };
+  }
+  
+  // Compose info breakdown
+  const plsBreakdown = [];
+  const otherBreakdown = [];
+  const unknownTids = [];
+  for (const [tid, info] of foundTids.entries()) {
+    if (allowedTids.has(tid)) {
+      plsBreakdown.push(`${info.name} (${info.count} trx)`);
+    } else {
+      const lookup = findOutletByBcaTid(tid);
+      if (lookup) {
+        otherBreakdown.push(`${lookup.outlet.display_name} (${info.count} trx)`);
+      } else {
+        unknownTids.push(`TID ${tid} ${info.name} (${info.count} trx)`);
+      }
+    }
+  }
+  
+  let detailMsg = `${bankFiles.length} file · MID <b>${allowedMid}</b> · <b>${plsRows}</b> trx untuk ${outlet.display_name}`;
+  if (totalRows > plsRows) {
+    detailMsg += ` dari ${totalRows} total (${foundTids.size} outlet di file)`;
+  }
+  if (plsBreakdown.length > 0) {
+    detailMsg += `<br>📍 Diproses: ${plsBreakdown.join(', ')}`;
+  }
+  if (otherBreakdown.length > 0) {
+    detailMsg += `<br>⊘ Di-skip: ${otherBreakdown.join(', ')}`;
+  }
+  if (unknownTids.length > 0) {
+    detailMsg += `<br>⚠ TID belum di-registry: ${unknownTids.join(', ')}`;
+  }
+  
+  return {
+    ok: true,
+    message: detailMsg,
+    totalRows: plsRows,
+    plsRows, totalAllRows: totalRows,
+    foundTids,
+    unknownTids
+  };
+}
+
+// Validasi BNI: extract ZIP (no password), cek MID di file XLSX
+async function validateBankBNI(bankFiles, outletCode) {
+  const outlet = OUTLET_REGISTRY[outletCode];
+  if (!outlet) return { ok: false, message: `Outlet ${outletCode} tidak ada di registry.` };
+  
+  const bankCfg = outlet.banks.BNI;
+  if (!bankCfg || !bankCfg.mids || bankCfg.mids.length === 0) {
+    return { ok: false, message: `MID BNI untuk ${outlet.display_name} belum terdaftar di registry.` };
+  }
+  
+  const allowedMids = new Set(bankCfg.mids);
+  const foundMids = new Map(); // mid -> { name, count }
+  let plsRows = 0;
+  let totalRows = 0;
+  const perJenis = { KREDIT: 0, DEBIT: 0, QRIS: 0, TAPCASH: 0 };
+  const fileList = [];
+  
+  for (const f of bankFiles) {
+    if (!f.name.toLowerCase().endsWith('.zip')) {
+      return { ok: false, message: `File BNI harus berupa ZIP berisi XLSX. File <b>${f.name}</b> bukan ZIP.` };
+    }
+    
+    let zip;
+    try {
+      zip = await JSZip.loadAsync(f);
+    } catch (e) {
+      return { ok: false, message: `Gagal extract <b>${f.name}</b>: ${e.message}` };
+    }
+    
+    let xlsxInZip = 0;
+    for (const fname of Object.keys(zip.files)) {
+      if (!fname.toLowerCase().endsWith('.xlsx')) continue;
+      xlsxInZip++;
+      const jenis = detectBniJenisFromFilename(fname);
+      const arrayBuffer = await zip.files[fname].async('arraybuffer');
+      
+      try {
+        const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: false });
+        const wsName = wb.SheetNames[0];
+        const ws = wb.Sheets[wsName];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+        if (rows.length < 2) continue;
+        
+        const header = rows[0].map(h => String(h).trim().toUpperCase());
+        const iMid = header.indexOf('MID');
+        const iMerchant = header.indexOf('MERCHANT NAME');
+        if (iMid < 0) continue;
+        
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || !r[iMid]) continue;
+          const mid = String(r[iMid]).trim();
+          const name = iMerchant >= 0 ? String(r[iMerchant] || '').trim() : '';
+          totalRows++;
+          
+          if (!foundMids.has(mid)) foundMids.set(mid, { name, count: 0 });
+          foundMids.get(mid).count++;
+          
+          if (allowedMids.has(mid)) {
+            plsRows++;
+            if (jenis) perJenis[jenis] = (perJenis[jenis] || 0) + 1;
+          }
+        }
+        fileList.push({ name: fname, jenis: jenis || 'UNKNOWN' });
+      } catch (e) {
+        return { ok: false, message: `Gagal baca XLSX <b>${fname}</b>: ${e.message}` };
+      }
+    }
+    
+    if (xlsxInZip === 0) {
+      return { ok: false, message: `ZIP <b>${f.name}</b> tidak berisi file .xlsx. Cek apakah ini file BNI yang benar.` };
+    }
+  }
+  
+  if (totalRows === 0) {
+    return { ok: false, message: `Tidak ada baris transaksi yang terbaca dari file BNI. Cek apakah file XLSX di ZIP valid.` };
+  }
+  
+  if (plsRows === 0) {
+    const otherOutlets = [];
+    for (const [mid, info] of foundMids.entries()) {
+      otherOutlets.push(`${info.name || '(unknown)'} (MID ${mid}, ${info.count} trx)`);
+    }
+    return {
+      ok: false,
+      message: `Tidak ada transaksi untuk outlet <b>${outlet.display_name}</b> (MID <b>${[...allowedMids].join(', ')}</b>).<br>File berisi: ${otherOutlets.slice(0, 5).join(', ')}${otherOutlets.length > 5 ? ` +${otherOutlets.length - 5} lainnya` : ''}`
+    };
+  }
+  
+  // Breakdown jenis transaksi
+  const jenisBreakdown = Object.entries(perJenis)
+    .filter(([_, c]) => c > 0)
+    .map(([k, c]) => `${k}: ${c}`)
+    .join(', ');
+  
+  // Outlet lain yang ter-skip
+  const otherOutlets = [];
+  for (const [mid, info] of foundMids.entries()) {
+    if (!allowedMids.has(mid)) {
+      otherOutlets.push(`${info.name || '(unknown)'} (${info.count} trx)`);
+    }
+  }
+  
+  let detailMsg = `${bankFiles.length} ZIP · ${fileList.length} XLSX · MID <b>${[...allowedMids].join(', ')}</b> · <b>${plsRows}</b> trx untuk ${outlet.display_name}`;
+  if (totalRows > plsRows) {
+    detailMsg += ` dari ${totalRows} total (${foundMids.size} outlet di file)`;
+  }
+  if (jenisBreakdown) {
+    detailMsg += `<br>📊 Breakdown: ${jenisBreakdown}`;
+  }
+  if (otherOutlets.length > 0) {
+    detailMsg += `<br>⊘ Di-skip: ${otherOutlets.slice(0, 5).join(', ')}${otherOutlets.length > 5 ? ` +${otherOutlets.length - 5} lainnya` : ''}`;
+  }
+  
+  return {
+    ok: true,
+    message: detailMsg,
+    totalRows: plsRows,
+    plsRows, totalAllRows: totalRows,
+    foundMids,
+    perJenis
+  };
+}
+
+// ============================================================
+// LOGGING
+// ============================================================
+const logEl = document.getElementById('log');
+function log(msg, type = '') {
+  logEl.classList.add('visible');
+  const span = document.createElement('div');
+  if (type) span.className = type;
+  span.textContent = msg;
+  logEl.appendChild(span);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function clearLog() {
+  logEl.innerHTML = '';
+  logEl.classList.remove('visible');
+}
+
+// ============================================================
+// FILE HANDLING
+// ============================================================
+let posFile = null;
+let bankFiles = [];
+
+function setupDropZones() {
+  ['posDropZone', 'bankDropZone'].forEach(id => {
+    const zone = document.getElementById(id);
+    zone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      zone.classList.add('dragover');
+    });
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.classList.remove('dragover');
+      if (id === 'posDropZone') handlePosFile(e.dataTransfer.files[0]);
+      else handleBankFiles(e.dataTransfer.files);
+    });
+  });
+}
+
+function onPosFile(e) { handlePosFile(e.target.files[0]); }
+function onBankFiles(e) { handleBankFiles(e.target.files); }
+
+function handlePosFile(file) {
+  if (!file) return;
+  const fname = file.name.toLowerCase();
+  if (!fname.endsWith('.txt') && !fname.endsWith('.csv')) {
+    alert('File POS harus berformat .txt (VHP) atau .csv (VHP_CLOUD)');
+    return;
+  }
+  posFile = file;
+  const zone = document.getElementById('posDropZone');
+  zone.classList.add('has-file');
+  document.getElementById('posDropText').textContent = `✓ ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+  clearValidationStatus('pos');
+  updateProcessBtn();
+}
+
+function handleBankFiles(files) {
+  bankFiles = Array.from(files).filter(f => 
+    f.name.toLowerCase().endsWith('.zip') || f.name.toLowerCase().endsWith('.csv')
+  );
+  if (bankFiles.length === 0) return;
+  const zone = document.getElementById('bankDropZone');
+  zone.classList.add('has-file');
+  document.getElementById('bankDropText').textContent = `✓ ${bankFiles.length} file siap diproses`;
+  clearValidationStatus('bank');
+  updateProcessBtn();
+}
+
+function updateProcessBtn() {
+  document.getElementById('processBtn').disabled = !(posFile && bankFiles.length > 0);
+}
+
+function resetAll() {
+  posFile = null;
+  bankFiles = [];
+  document.getElementById('posDropZone').classList.remove('has-file');
+  document.getElementById('bankDropZone').classList.remove('has-file');
+  document.getElementById('posDropText').textContent = '📄 Klik atau drop file POS (.txt / .csv) di sini';
+  document.getElementById('bankDropText').textContent = '🗜️ Klik atau drop file .zip BRI (boleh multiple)';
+  document.getElementById('posInput').value = '';
+  document.getElementById('bankInput').value = '';
+  document.getElementById('results').classList.remove('visible');
+  clearValidationStatus('pos');
+  clearValidationStatus('bank');
+  updateProcessBtn();
+  clearLog();
+}
+
+// ============================================================
+// PARSER POS
+// ============================================================
+// POS_KEYWORDS sekarang AUTO-GENERATED dari BANK_REGISTRY.
+// Edit keyword di BANK_REGISTRY[bankCode].pos_keywords, BUKAN di sini.
+const POS_KEYWORDS = getAllPosKeywords();
+
+// Ada 2 format POS VHP TXT yang ditemui:
+//
+// Format A (PLS-style) — dengan separator '*':
+//   "12/05/26 * 231772 0001 BCA VISA *2026000017696 Front Office 1 -540,870.00 ..."
+//   Pakai outlet: PLS, PLMT, PLD, PATIO, TD
+//
+// Format B (SMB-style) — tanpa '*', ada kolom RmNo + N M Sh:
+//   "17/05/26          01     77068  0001 BCA VISA          ...  -724,820.00"
+//   Pakai outlet: PLSMM, PGS, PIM, BXC, SMS, SMB, SUMABA
+//
+// Parser coba Format A dulu (lebih spesifik karena require '*'), kalau gagal
+// baru coba Format B. Cara ini robust untuk file mixed atau format baru.
+const POS_REGEX_A = /^(\d{2}\/\d{2}\/\d{2})\s+\*\s+(\d+)\s+(\d{4})\s+(.+?)\s+\*(\d+)\s+.*?(-?[\d,]+\.\d{2})/;
+
+// Format B: deskripsi adalah huruf besar (mungkin dengan spasi/slash), diikuti 2+ spasi
+// untuk dipisahkan dari kolom berikutnya (Voucher kosong → Department).
+// Description regex: ^[A-Z] supaya tidak match angka, [A-Z /]+? supaya cover "BCA DEBIT/QR".
+const POS_REGEX_B = /^(\d{2}\/\d{2}\/\d{2})\s+(?:\S+\s+)?(?:\d+\s+)?(\d+)\s+(\d{4})\s+([A-Z][A-Z /]+?)\s{2,}.*?(-?[\d,]+\.\d{2})/;
+
+// identifyBank() sekarang baca dari BANK_REGISTRY.
+// Tambah bank baru = tambah entry di BANK_REGISTRY, otomatis ke-detect di sini.
+function identifyBank(desc) {
+  return identifyBankFromRegistry(desc);
+}
+
+function parsePOS(text) {
+  const transactions = [];
+  const unknownKeywords = new Map();  // desc → count, untuk detector keyword baru
+  window.__lastParsePosNormalizations = new Map();  // reset tracker normalisasi label generic
+  const lines = text.split(/\r?\n/);
+  let countA = 0, countB = 0;  // statistik untuk diagnostik
+
+  for (const line of lines) {
+    // Skip baris "T O T A L" (subtotal per payment type di format SMB)
+    if (line.includes('T O T A L')) continue;
+
+    // Coba Format A (PLS-style dengan '*') dulu — lebih spesifik
+    let m = POS_REGEX_A.exec(line);
+    let date, billNo, artNo, desc, ref, amount;
+    let formatUsed = '';
+
+    if (m) {
+      [, date, billNo, artNo, desc, ref, amount] = m;
+      formatUsed = 'A';
+      countA++;
+    } else {
+      // Fallback ke Format B (SMB-style tanpa '*')
+      m = POS_REGEX_B.exec(line);
+      if (!m) continue;
+      [, date, billNo, artNo, desc, amount] = m;
+      ref = '';  // Format B tidak punya voucher → pseudo ref di bawah
+      formatUsed = 'B';
+      countB++;
+    }
+
+    const descRaw = desc.trim();
+
+    // === NORMALIZE LABEL GENERIC TANPA PREFIX BANK ===
+    // Beberapa outlet (mis. SMB) kadang catat 'JCB CARD' atau 'AMEX' / 'AMEX CARD'
+    // tanpa prefix bank. Default fallback: treat sebagai BCA CC (credit).
+    // Lihat keputusan user di session refinement v7.
+    let descTrim = descRaw;
+    let wasNormalized = false;
+    const knownBankPrefixes = ['BCA', 'BRI', 'BNI', 'MANDIRI', 'CIMB'];
+    const hasKnownPrefix = knownBankPrefixes.some(b => descRaw.toUpperCase().startsWith(b));
+    if (!hasKnownPrefix) {
+      const u = descRaw.toUpperCase();
+      // Match: 'JCB CARD', 'JCB', 'AMEX', 'AMEX CARD'
+      if (/^(JCB CARD|JCB|AMEX CARD|AMEX)\b/.test(u)) {
+        // Map ke keyword BCA equivalent
+        if (/JCB/.test(u)) descTrim = 'BCA JCB CARD';
+        else descTrim = 'BCA AMEX CARD';
+        wasNormalized = true;
+        // Track ke window untuk log
+        if (!window.__lastParsePosNormalizations) window.__lastParsePosNormalizations = new Map();
+        const k = `${descRaw} → ${descTrim}`;
+        window.__lastParsePosNormalizations.set(k, (window.__lastParsePosNormalizations.get(k) || 0) + 1);
+      }
+    }
+
+    // === UNKNOWN KEYWORD DETECTOR ===
+    if (!POS_KEYWORDS.some(kw => descTrim.includes(kw))) {
+      const u = descTrim.toUpperCase();
+      if (/VISA|MASTER|DEBIT|AMEX|CARD|QRIS|TAPCASH|FLAZZ|BRIZZI|JCB/.test(u)) {
+        unknownKeywords.set(descTrim, (unknownKeywords.get(descTrim) || 0) + 1);
+      }
+      continue;
+    }
+
+    const amt = parseFloat(amount.replace(/,/g, '').replace('-', ''));
+    const [dd, mm, yy] = date.split('/');
+    const isoDate = `20${yy}-${mm}-${dd}`;
+
+    // ref untuk Format B = pseudo (Date + BillNo) karena tidak ada voucher
+    if (formatUsed === 'B') {
+      ref = `${isoDate.replace(/-/g, '')}${billNo}`;
+    }
+    const refShort = ref.length >= 9 ? ref.slice(-9) : ref;
+
+    transactions.push({
+      pos_date: isoDate,
+      bill_no: billNo,
+      artno: artNo,
+      payment_type: descTrim,
+      payment_type_raw: wasNormalized ? descRaw : undefined,  // simpan label asli kalau dinormalisasi
+      internal_ref: ref,
+      ref_short: refShort,
+      amount: amt,
+      bank_keyword: identifyBank(descTrim),
+    });
+  }
+
+  // Expose untuk diakses runReconciliation()
+  window.__lastParsePosUnknownKeywords = unknownKeywords;
+  window.__lastParsePosFormatStats = { formatA: countA, formatB: countB };
+
+  return transactions;
+}
+
+// ============================================================
+// PARSER POS VHP_CLOUD (CSV format — untuk outlet TPI, TSD, TSBK)
+// ============================================================
+// Format CSV header (line 7 di file):
+//   "Date","Room Number","Non Stay","Master Bill","Shift","Bill Number",
+//   "Article Number","Description","Voucher Number","Department","Outlet",
+//   "Quantity","Amount","Guest Name","Bill Receiver","Reservation Name",
+//   "Segment Code","Check-in Date","Check-out Date","Time","ID","System Date",
+//   "Remark","Nationality","Reservation Number","Source Booking"
+//
+// Field index:
+//   [0]=Date (DD/MM/YY)   [5]=Bill Number   [6]=Article Number
+//   [7]=Description       [8]=Voucher Number (ALWAYS EMPTY di VHP_CLOUD)
+//   [12]=Amount (negative untuk payment)
+//   [19]=Time             [20]=ID (shift)
+//
+// Payment row identifier: Description mengandung keyword bank (BCA/BRI/BNI/MANDIRI/CIMB)
+// dan amount NEGATIVE. Voucher Number kosong → internal_ref = bill_no.
+function parsePOSCloud(text) {
+  const transactions = [];
+  const unknownKeywords = new Map();
+  window.__lastParsePosNormalizations = new Map();  // reset tracker normalisasi label generic
+  const lines = text.split(/\r?\n/);
+
+  // Cari baris header (yang dimulai dengan "Date","Room Number",...)
+  // Biasanya line 7 (0-indexed 6) tapi defensif: cari pakai pattern.
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(lines.length, 30); i++) {
+    if (/^"Date","Room Number"/i.test(lines[i])) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx === -1) {
+    // Fallback: cari baris yang punya banyak kolom dengan "Bill Number"
+    for (let i = 0; i < Math.min(lines.length, 30); i++) {
+      if (/Bill Number.*Article Number.*Description/i.test(lines[i])) {
+        headerIdx = i;
+        break;
+      }
+    }
+  }
+  if (headerIdx === -1) {
+    // File tidak punya header yang dikenali — return kosong
+    window.__lastParsePosUnknownKeywords = unknownKeywords;
+    return transactions;
+  }
+
+  // Data dimulai setelah header
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    const cols = parseCsvLineGeneric(lines[i], ',');
+    if (!cols || cols.length < 13) continue;
+
+    const dateStr = cols[0].trim();
+    if (!dateStr || dateStr === 'Date') continue;
+
+    const billNo = cols[5].trim();
+    const artNo = cols[6].trim();
+    const descRaw = cols[7].trim();
+    if (!descRaw) continue;
+
+    const amtStr = cols[12].replace(/,/g, '').replace(/"/g, '').trim();
+    const amtNum = parseFloat(amtStr);
+    if (isNaN(amtNum)) continue;
+    // Payment row = amount NEGATIVE (di VHP_CLOUD, payment di-record sebagai negatif)
+    if (amtNum >= 0) continue;
+    const amt = Math.abs(amtNum);
+
+    // === NORMALIZE LABEL GENERIC (sama seperti parsePOS) ===
+    // 'JCB CARD' / 'AMEX' tanpa prefix bank → default ke BCA CC.
+    let descTrim = descRaw;
+    let wasNormalized = false;
+    const knownBankPrefixes = ['BCA', 'BRI', 'BNI', 'MANDIRI', 'CIMB'];
+    const hasKnownPrefix = knownBankPrefixes.some(b => descRaw.toUpperCase().startsWith(b));
+    if (!hasKnownPrefix) {
+      const u = descRaw.toUpperCase();
+      if (/^(JCB CARD|JCB|AMEX CARD|AMEX)\b/.test(u)) {
+        if (/JCB/.test(u)) descTrim = 'BCA JCB CARD';
+        else descTrim = 'BCA AMEX CARD';
+        wasNormalized = true;
+        if (!window.__lastParsePosNormalizations) window.__lastParsePosNormalizations = new Map();
+        const k = `${descRaw} → ${descTrim}`;
+        window.__lastParsePosNormalizations.set(k, (window.__lastParsePosNormalizations.get(k) || 0) + 1);
+      }
+    }
+
+    // Cek apakah descTrim mengandung salah satu POS_KEYWORDS
+    if (!POS_KEYWORDS.some(kw => descTrim.includes(kw))) {
+      // Unknown keyword detector — sama seperti parsePOS()
+      const u = descTrim.toUpperCase();
+      if (/VISA|MASTER|DEBIT|AMEX|CARD|QRIS|TAPCASH|FLAZZ|BRIZZI|JCB/.test(u)) {
+        unknownKeywords.set(descTrim, (unknownKeywords.get(descTrim) || 0) + 1);
+      }
+      continue;
+    }
+
+    // Konversi tanggal: DD/MM/YY → YYYY-MM-DD
+    const dateMatch = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{2})$/);
+    if (!dateMatch) continue;
+    const [, dd, mm, yy] = dateMatch;
+    const isoDate = `20${yy}-${mm}-${dd}`;
+
+    // Pseudo internal_ref = Date + BillNo (sesuai keputusan: 1 bill = 1 payment)
+    const pseudoRef = `${isoDate.replace(/-/g, '')}${billNo}`;
+    const refShort = pseudoRef.length >= 9 ? pseudoRef.slice(-9) : pseudoRef;
+
+    transactions.push({
+      pos_date: isoDate,
+      bill_no: billNo,
+      artno: artNo,
+      payment_type: descTrim,
+      payment_type_raw: wasNormalized ? descRaw : undefined,
+      internal_ref: pseudoRef,    // pseudo ref karena VHP_CLOUD tidak punya voucher number
+      ref_short: refShort,
+      amount: amt,
+      bank_keyword: identifyBank(descTrim),
+    });
+  }
+
+  window.__lastParsePosUnknownKeywords = unknownKeywords;
+  return transactions;
+}
+
+// Dispatcher: pilih parser POS berdasarkan pos_system outlet
+function parsePOSAuto(text, posSystem) {
+  if (posSystem === 'VHP_CLOUD') return parsePOSCloud(text);
+  // Default: VHP TXT format
+  return parsePOS(text);
+}
+
+// ============================================================
+// PARSER BRI DETAIL CSV
+// ============================================================
+// Klasifikasi TIPE BRI ke kategori CREDIT/DEBIT/QRIS untuk matching dengan label POS.
+// Sumber: kolom TIPE di CSV detail BRI (row[12]).
+// Aturan (urut prioritas):
+//   1. TIPE mengandung "QRIS"                → 'QRIS'  (mis: "11 QRIS")
+//   2. TIPE mengandung "DEBIT"/"NPG"/"ON-US" → 'DEBIT' (mis: "02 Debit-BRI", "07 Bank-Lain-NPG", "00/03 On-Us")
+//   3. Selain itu                            → 'CREDIT' (default, mis: "01 Bank-Lain", "09 Bank-Lain via JCB")
+function classifyBriTipe(tipe) {
+  const t = (tipe || '').toUpperCase();
+  if (t.includes('QRIS')) return 'QRIS';
+  if (t.includes('DEBIT') || t.includes('NPG') || t.includes('ON-US')) return 'DEBIT';
+  return 'CREDIT';
+}
+
+function parseBRIDetail(text) {
+  const transactions = [];
+  const rows = text.split(/\r?\n/).map(l => parseCsvLine(l));
+  // skip 4 baris header
+  for (let i = 4; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.length < 19 || row[0] === 'END OF REPORT' || !row[0]) continue;
+    try {
+      transactions.push({
+        mid: row[0], tid: row[1], merchant: row[2],
+        tgl_trx: row[3], tgl_setl: row[4], card: row[5],
+        remark_rk: row[6],
+        amt_setl: parseFloat(row[7]) || 0,
+        amt_trx: parseFloat(row[8]) || 0,
+        disc_amt: parseFloat(row[10]) || 0,
+        net_amt: parseFloat(row[11]) || 0,
+        tipe: row[12], principle: row[13], issuer: row[14],
+        aprv: row[15], batch_num: row[16],
+        tgl_rk: row[18], bank: 'BRI',
+        kartu_jenis: classifyBriTipe(row[12]),  // BARU v8: untuk pos_jenis_map
+      });
+    } catch (e) { /* skip */ }
+  }
+  return transactions;
+}
+
+// Parser BCA — semicolon-delimited, no header, 28 kolom
+// Format from ZIP: '0000004324421.00' (15 digits + .00) — no thousand separator
+// Tipe Transaksi: TC/TD/TQ (detail trx) | AC/AD/AS (aggregate) | SC/SD (sub-settlement)
+// Hanya TC/TD/TQ yang dipakai untuk matching POS
+// Filter: hanya ambil TID yang ada di allowedTids
+function parseBCADetail(text, allowedTids) {
+  const transactions = [];        // baris detail T* (untuk matching POS)
+  const settlements = [];         // baris settlement S* / A* (untuk summary)
+  const skipped = { foreign_tid: 0, foreign_mid: 0 };
+  
+  const rows = text.split(/\r?\n/);
+  // BCA file dari ZIP: TIDAK ada header. Tapi kalau user upload CSV processed (yang ada header), kita skip.
+  let startIdx = 0;
+  if (rows[0] && /card|gross|outlet|tipe/i.test(rows[0]) && rows[0].split(';').length < rows[0].split(',').length) {
+    // Heuristic: kalau koma lebih banyak dari semicolon di row 0, ini CSV processed → skip header
+    startIdx = 1;
+  }
+  
+  const parseAmt = (s) => {
+    if (!s) return 0;
+    s = s.trim().replace(/^"|"$/g, '').replace(/,/g, '');
+    // Format BCA dari ZIP: '0000004324421.00' → 4324421.00
+    return parseFloat(s) || 0;
+  };
+  
+  for (let i = startIdx; i < rows.length; i++) {
+    // Detect delimiter per row (untuk safety; biasanya konsisten per file)
+    const semiCount = (rows[i].match(/;/g) || []).length;
+    const commaCount = (rows[i].match(/,/g) || []).length;
+    const delim = semiCount >= commaCount ? ';' : ',';
+    
+    const cols = parseCsvLineGeneric(rows[i], delim);
+    if (!cols || cols.length < 20) continue;
+    
+    const tipe = (cols[14] || '').trim();
+    if (!tipe) continue;
+    
+    const mid = (cols[5] || '').trim();
+    const tid = (cols[7] || '').trim();
+    const tidPadded = tid.padStart(9, '0');
+    const outletName = (cols[9] || '').trim();
+    const gross = parseAmt(cols[4]);
+    const net = parseAmt(cols[10]);
+    const mdr = parseAmt(cols[17]);
+    const tgl_trx = (cols[12] || '').trim();    // YYYYMMDD
+    const tgl_cair = (cols[19] || '').trim();   // YYYYMMDD
+    const card_num = (cols[1] || '').trim();
+    const card_type = (cols[3] || '').trim();
+    const aprv = (cols[22] || '').trim();
+    
+    // Filter MID: harus match (normalize leading zeros)
+    // (validasi MID sudah dilakukan, ini double-check)
+    
+    // Konversi YYYYMMDD → YYYY-MM-DD untuk konsistensi dengan POS
+    const isoTrx = tgl_trx.length === 8 ? `${tgl_trx.slice(0,4)}-${tgl_trx.slice(4,6)}-${tgl_trx.slice(6,8)}` : tgl_trx;
+    const isoCair = tgl_cair.length === 8 ? `${tgl_cair.slice(0,4)}-${tgl_cair.slice(4,6)}-${tgl_cair.slice(6,8)}` : tgl_cair;
+    
+    const row = {
+      mid, tid: tidPadded, outlet_name: outletName,
+      tipe, gross, net, mdr,
+      tgl_trx: isoTrx, tgl_cair: isoCair,
+      card_num, card_type, aprv, bank: 'BCA'
+    };
+    
+    // Filter TID
+    if (!allowedTids.has(tidPadded)) {
+      skipped.foreign_tid++;
+      continue;
+    }
+    
+    // Klasifikasi: T* untuk matching, S*/A* untuk settlement summary
+    if (tipe === 'TC' || tipe === 'TD' || tipe === 'TQ') {
+      // Untuk match POS, normalize ke struktur BRI-like
+      transactions.push({
+        ...row,
+        // Mapping ke field BRI-compatible (untuk reconcile() yang generic)
+        merchant: outletName,
+        amt_setl: 0,                    // settlement amount ada di S/A, bukan T
+        amt_trx: gross,                 // gross transaction
+        disc_amt: mdr,
+        net_amt: net,
+        tgl_rk: isoCair,                // tanggal cair
+        remark_rk: `BCA-${getBcaKartuType(tipe)}-${isoCair}`,  // pseudo settlement key
+        card: card_num,
+        principle: getBcaKartuType(tipe),  // Credit/Debit/QRIS — for display
+        issuer: card_type === 'D' ? 'DEBIT' : (tipe === 'TQ' ? 'QRIS' : 'CREDIT'),
+        batch_num: '',
+        tipe_full: tipe,                // simpan tipe asli BCA
+        kartu_jenis: getBcaKartuType(tipe).toUpperCase(),  // BARU v8: CREDIT/DEBIT/QRIS untuk pos_jenis_map
+      });
+    } else if (tipe === 'SC' || tipe === 'SD' || tipe === 'AS') {
+      // Settlement summary entries (untuk Summary sheet)
+      settlements.push({ ...row, kartu: getBcaKartuType(tipe) });
+    }
+    // AC, AD diabaikan (duplikat dengan SC/SD total) — kita pakai SC/SD/AS saja
+  }
+  
+  return { transactions, settlements, skipped };
+}
+
+function getBcaKartuType(tipe) {
+  // TC, SC, AC → Credit
+  // TD, SD, AD → Debit
+  // TQ, AS    → QRIS
+  if (tipe === 'TC' || tipe === 'SC' || tipe === 'AC') return 'Credit';
+  if (tipe === 'TD' || tipe === 'SD' || tipe === 'AD') return 'Debit';
+  if (tipe === 'TQ' || tipe === 'AS') return 'QRIS';
+  return 'Unknown';
+}
+
+// ============================================================
+// PARSER BNI XLSX
+// ============================================================
+// Format BNI: 1 ZIP berisi 4 file XLSX (KREDIT/DEBIT/QRIS/TAPCASH), no password.
+// Setiap XLSX punya 23 kolom yang sama, dibedakan dari kolom JENIS TRX.
+// Filter by MID (1 MID cover semua sub-outlet PLS).
+//
+// Field BNI → struktur BRI-compatible:
+//   PROC DATE → tgl_rk (tanggal cair)        | DD/MM/YYYY → YYYY-MM-DD
+//   TRX DATE  → tgl_trx (tanggal transaksi)  | DD/MM/YYYY → YYYY-MM-DD
+//   AMOUNT    → amt_trx (gross)
+//   DISC AMOUNT → disc_amt (MDR)
+//   NETT AMOUNT → net_amt
+//   AUTH      → aprv
+//   CARD NO   → card
+//   TYPE      → kode kartu (V/M/A/P) → principle (Visa/Master/Amex/Principle)
+//   JENIS TRX → tipe (KREDIT/DEBIT/QRIS/TAPCASH)
+//   MID, TID, GB, MERCHANT NAME → metadata
+
+// Tentukan jenis (KREDIT/DEBIT/QRIS/TAPCASH) dari nama file ATAU dari kolom JENIS TRX
+function detectBniJenisFromFilename(filename) {
+  const u = filename.toUpperCase();
+  if (u.includes('KREDIT')) return 'KREDIT';
+  if (u.includes('DEBIT')) return 'DEBIT';
+  if (u.includes('QRIS')) return 'QRIS';
+  if (u.includes('TAPCASH')) return 'TAPCASH';
+  return null;
+}
+
+// Mapping principle code BNI → human label
+function getBniPrincipleLabel(typeCode) {
+  if (!typeCode) return '';
+  const t = String(typeCode).trim().toUpperCase();
+  if (t === 'V') return 'Visa';
+  if (t === 'M') return 'Master';
+  if (t === 'A') return 'Amex';
+  if (t === 'P') return 'Principle';  // QRIS / non-card
+  return t;
+}
+
+// Konversi DD/MM/YYYY → YYYY-MM-DD. Handle juga Date object dari SheetJS.
+function bniDateToIso(val) {
+  if (!val) return '';
+  // Kalau berupa string DD/MM/YYYY
+  if (typeof val === 'string') {
+    const m = val.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    // Atau YYYY-MM-DD sudah
+    if (/^\d{4}-\d{2}-\d{2}/.test(val)) return val.slice(0, 10);
+    return String(val).trim();
+  }
+  // Kalau berupa Date object (SheetJS cellDates:true)
+  if (val instanceof Date) {
+    const yyyy = val.getFullYear();
+    const mm = String(val.getMonth() + 1).padStart(2, '0');
+    const dd = String(val.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  // Kalau number (SheetJS serial)
+  if (typeof val === 'number') {
+    try {
+      const parsed = XLSX.SSF.parse_date_code(val);
+      if (parsed) {
+        return `${parsed.y}-${String(parsed.m).padStart(2,'0')}-${String(parsed.d).padStart(2,'0')}`;
+      }
+    } catch (e) {}
+  }
+  return String(val);
+}
+
+// Parse 1 file XLSX BNI → array transaksi (mirip parseBRIDetail return shape)
+function parseBniXlsxSheet(arrayBuffer, filename, allowedMids, jenisOverride) {
+  // Baca workbook dari arrayBuffer
+  // PENTING: cellDates:false supaya tanggal jadi string DD/MM/YYYY persis seperti di file
+  // (BNI menyimpan tanggal sebagai TEXT di Excel, bukan serial number).
+  const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: false, cellNF: false });
+  const wsName = wb.SheetNames[0];
+  const ws = wb.Sheets[wsName];
+  // header: 1 = baris pertama jadi header
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+  
+  if (rows.length < 2) return { transactions: [], skipped: { foreign_mid: 0, total: 0 } };
+  
+  // Baris 0 = header. Cari index kolom by name (untuk safety kalau urutan kolom berubah).
+  const header = rows[0].map(h => String(h).trim().toUpperCase());
+  const idx = (name) => header.indexOf(name);
+  
+  const iProcDate = idx('PROC DATE');
+  const iMid = idx('MID');
+  const iGb = idx('GB');
+  const iType = idx('TYPE');
+  const iTrxDate = idx('TRX DATE');
+  const iAuth = idx('AUTH');
+  const iCardNo = idx('CARD NO');
+  const iAmount = idx('AMOUNT');
+  const iTid = idx('TID');
+  const iJenis = idx('JENIS TRX');
+  const iDisc = idx('DISC AMOUNT');
+  const iNett = idx('NETT AMOUNT');
+  const iMerchant = idx('MERCHANT NAME');
+  
+  if (iMid < 0 || iAmount < 0) {
+    return { transactions: [], skipped: { foreign_mid: 0, total: 0, error: 'Header tidak lengkap di ' + filename } };
+  }
+  
+  const transactions = [];
+  const skipped = { foreign_mid: 0, total: 0 };
+  
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.length === 0) continue;
+    const mid = String(r[iMid] || '').trim();
+    if (!mid) continue;
+    
+    skipped.total++;
+    
+    // Filter MID: skip baris yang MID-nya tidak di allowedMids
+    if (allowedMids && !allowedMids.has(mid)) {
+      skipped.foreign_mid++;
+      continue;
+    }
+    
+    // JENIS TRX bisa di kolom atau di-override dari nama file (safety)
+    const jenisRaw = iJenis >= 0 ? String(r[iJenis] || '').trim().toUpperCase() : '';
+    const jenis = jenisRaw || jenisOverride || '';
+    
+    const gross = parseFloat(r[iAmount]) || 0;
+    const mdr = iDisc >= 0 ? (parseFloat(r[iDisc]) || 0) : 0;
+    const net = iNett >= 0 ? (parseFloat(r[iNett]) || 0) : (gross - mdr);
+    
+    const tglTrxIso = iTrxDate >= 0 ? bniDateToIso(r[iTrxDate]) : '';
+    const tglRkIso = iProcDate >= 0 ? bniDateToIso(r[iProcDate]) : '';
+    
+    const typeCode = iType >= 0 ? String(r[iType] || '').trim() : '';
+    const principle = getBniPrincipleLabel(typeCode);
+    const aprv = iAuth >= 0 ? String(r[iAuth] || '').trim() : '';
+    const cardNo = iCardNo >= 0 ? String(r[iCardNo] || '').trim() : '';
+    const tid = iTid >= 0 ? String(r[iTid] || '').trim() : '';
+    const merchant = iMerchant >= 0 ? String(r[iMerchant] || '').trim() : '';
+    const gb = iGb >= 0 ? String(r[iGb] || '').trim() : '';
+    
+    transactions.push({
+      // Field standar (kompatibel dengan reconcile() & render):
+      mid, tid, merchant,
+      tgl_trx: tglTrxIso,
+      tgl_rk: tglRkIso,           // tanggal cair (BNI: PROC DATE)
+      amt_trx: gross,             // gross
+      disc_amt: mdr,
+      net_amt: net,
+      amt_setl: 0,                // BNI tidak punya AMT_SETL terpisah; dihitung di summary
+      remark_rk: `BNI-${jenis}-${tglRkIso}`,  // pseudo settlement key
+      card: cardNo,
+      principle,                  // Visa/Master/Amex/Principle (untuk display di tabel)
+      issuer: jenis,              // KREDIT/DEBIT/QRIS/TAPCASH (untuk display)
+      aprv,
+      tipe: jenis,                // sama dengan issuer (untuk Tipe Settlement)
+      batch_num: gb,
+      bank: 'BNI',
+      // Field tambahan BNI:
+      tipe_full: jenis,           // KREDIT/DEBIT/QRIS/TAPCASH
+      bni_jenis: jenis,           // alias eksplisit
+    });
+  }
+  
+  return { transactions, skipped };
+}
+
+// Extract semua file XLSX BNI dari 1 ZIP, lalu parse satu per satu.
+// Return: { transactions: [], stats: { perJenis: {...}, foreignMid, totalRows } }
+async function parseBniZip(file, allowedMids) {
+  const zip = await JSZip.loadAsync(file);
+  const allTransactions = [];
+  const stats = { 
+    perJenis: { KREDIT: 0, DEBIT: 0, QRIS: 0, TAPCASH: 0, UNKNOWN: 0 },
+    foreignMid: 0, 
+    totalRows: 0,
+    fileList: []
+  };
+  
+  for (const fname of Object.keys(zip.files)) {
+    if (!fname.toLowerCase().endsWith('.xlsx')) continue;
+    const jenisFromName = detectBniJenisFromFilename(fname);
+    const arrayBuffer = await zip.files[fname].async('arraybuffer');
+    const result = parseBniXlsxSheet(arrayBuffer, fname, allowedMids, jenisFromName);
+    
+    allTransactions.push(...result.transactions);
+    stats.foreignMid += result.skipped.foreign_mid || 0;
+    stats.totalRows += result.skipped.total || 0;
+    stats.fileList.push({ name: fname, jenis: jenisFromName, count: result.transactions.length });
+    
+    const jenisKey = jenisFromName || 'UNKNOWN';
+    stats.perJenis[jenisKey] = (stats.perJenis[jenisKey] || 0) + result.transactions.length;
+  }
+  
+  return { transactions: allTransactions, stats };
+}
+
+// ============================================================
+// MANDIRI PARSER (AES ZIP berisi 1 CSV per file)
+// ============================================================
+// Format Mandiri:
+//   - Setiap ZIP berisi 1 CSV. Filename pattern: MSR_..._403_... (CC/DEBIT) atau _408_... (QR).
+//   - User upload 2 ZIP per hari: 1 CC_DEBIT + 1 QR. Bisa multiple hari sekaligus.
+//   - Password ZIP = MID outlet (default '12600293' untuk PLS).
+//
+// CSV structure (kedua tipe punya pola sama):
+//   Line 1: "MERCHANT STATEMENT"
+//   Line 2-4: header info (Report Date, Group, Group Name)
+//   Line 5: "DETAIL,,,,,..."
+//   Line 6: header detail
+//   Line 7-N: detail rows (per-transaksi)
+//   Line N+1: "TOTAL,,,,..."
+//   Line N+2: "SUMMARY GROUP,,,,..."
+//   Line N+3: header summary
+//   Line N+4-M: summary rows (per-batch atau per-paymentdate)
+//   Line M+1: "TOTAL,,,,..."
+//
+// Kolom DETAIL untuk CC/DEBIT (403) — 27 kolom:
+//   [0]=MID [1]=Merchant Official [2]=Trading Name [3]=Bank Account
+//   [4]=Bank Account Name [5]=TRXDATE [6]=SETTLEDATE [7]=PAYMENT DATE
+//   [8]=TRXCODE [9]=DESCRIPTION [10]=TENOR [11]=CARD [12]=Issuing Bank Name
+//   [13]=Country Name [14]=Principal [15]=On Off Type [16]=Card Type
+//   [17]=TID [18]=AUTHCODE [19]=PAYMENTBATCH [20]=TIDBATCH [21]=BATCHSEQ
+//   [22]=AMOUNT [23]=NonMdrAMOUNT [24]=MDR Amount [25]=NET AMOUNT [26]=Bill Reff Num
+//
+// Kolom DETAIL untuk QR (408) — 15 kolom:
+//   [0]=NMID [1]=MID [2]=Merchant Official [3]=Trading Name [4]=Bank Account
+//   [5]=Bank Account Name [6]=TRXDATE [7]=TRXTIME [8]=Issuer Name [9]=TID
+//   [10]=Refference Number [11]=Reff ID/Invoice No [12]=AMOUNT [13]=MDR Amount [14]=NET AMOUNT
+//
+// QR TIDAK PUNYA PAYMENT DATE di detail → asumsikan T+1 (TRXDATE + 1 hari).
+
+// Deteksi tipe file Mandiri dari filename (atau dari kolom header)
+function detectMandiriFileType(filename) {
+  // Pattern: MSR_..._403_... = CC/DEBIT, _408_... = QR
+  if (/_403_/.test(filename)) return 'CC_DEBIT';
+  if (/_408_/.test(filename)) return 'QR';
+  // Fallback: cek nama ZIP-nya kalau ada kata kunci
+  const u = filename.toUpperCase();
+  if (u.includes('CC') || u.includes('DEBIT')) return 'CC_DEBIT';
+  if (u.includes('QR')) return 'QR';
+  return null;
+}
+
+// Konversi DD-MM-YYYY → YYYY-MM-DD
+function mandiriDateToIso(s) {
+  if (!s) return '';
+  s = String(s).trim();
+  const m = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  // Sudah ISO
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return s;
+}
+
+// Tambah n hari ke tanggal ISO (untuk T+1 di QR)
+function addDaysIso(isoDate, days) {
+  if (!isoDate || isoDate.length < 10) return isoDate;
+  const d = new Date(isoDate + 'T00:00:00');
+  if (isNaN(d.getTime())) return isoDate;
+  d.setDate(d.getDate() + days);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// Parse jumlah uang format Mandiri: "701,800.00" → 701800
+function parseMandiriAmount(s) {
+  if (s === null || s === undefined) return 0;
+  s = String(s).trim().replace(/^"|"$/g, '').replace(/,/g, '');
+  return parseFloat(s) || 0;
+}
+
+// Clean leading apostrophe (Excel artifact): "'097809" → "097809"
+function cleanMandiriField(s) {
+  if (!s) return '';
+  return String(s).trim().replace(/^"|"$/g, '').replace(/^'/, '');
+}
+
+// Parse 1 CSV Mandiri → { transactions, summaries, stats }
+// fileType: 'CC_DEBIT' atau 'QR'
+function parseMandiriCsv(text, fileType, allowedMids, filename) {
+  const transactions = [];
+  const summaries = [];
+  const stats = { foreign_mid: 0, total_detail: 0, total_summary: 0 };
+
+  const rows = text.split(/\r?\n/);
+  // Cari section markers
+  let detailStart = -1;
+  let detailEnd = -1;       // baris TOTAL pertama
+  let summaryStart = -1;
+  let summaryEnd = -1;      // baris TOTAL kedua
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r) continue;
+    // DETAIL marker line, lalu line berikutnya = header, lalu data dimulai i+2
+    if (/^DETAIL,/.test(r) && detailStart === -1) {
+      detailStart = i + 2;  // skip "DETAIL," dan header row
+    } else if (/^SUMMARY GROUP,/.test(r) && summaryStart === -1) {
+      summaryStart = i + 2;
+    } else if (/^TOTAL,/.test(r)) {
+      // TOTAL pertama = akhir detail; TOTAL kedua = akhir summary
+      if (detailStart !== -1 && detailEnd === -1) detailEnd = i;
+      else if (summaryStart !== -1 && summaryEnd === -1) summaryEnd = i;
+    }
+  }
+
+  if (detailStart === -1 || detailEnd === -1) {
+    // File rusak / format tidak dikenal
+    return { transactions, summaries, stats };
+  }
+
+  // === Parse DETAIL rows ===
+  for (let i = detailStart; i < detailEnd; i++) {
+    const cols = parseCsvLineGeneric(rows[i], ',');
+    if (!cols || cols.length === 0) continue;
+
+    if (fileType === 'CC_DEBIT') {
+      // 27 kolom — lihat dokumentasi di atas
+      if (cols.length < 26) continue;
+      const mid = cleanMandiriField(cols[0]);
+      if (!mid) continue;
+      stats.total_detail++;
+      if (allowedMids && !allowedMids.has(mid)) { stats.foreign_mid++; continue; }
+
+      const tradingName = cleanMandiriField(cols[2]);
+      const bankAccount = cleanMandiriField(cols[3]);
+      const bankAccountName = cleanMandiriField(cols[4]);
+      const trxDate = mandiriDateToIso(cols[5]);
+      const settleDate = mandiriDateToIso(cols[6]);
+      const paymentDate = mandiriDateToIso(cols[7]);
+      const description = cleanMandiriField(cols[9]);  // 'Retail', 'Installment', dst
+      const card = cleanMandiriField(cols[11]);
+      const principal = cleanMandiriField(cols[14]);   // 'Visa', 'MasterCard', etc.
+      const cardType = cleanMandiriField(cols[16]);    // 'Credit' / 'Debit'
+      const tid = cleanMandiriField(cols[17]);
+      const authCode = cleanMandiriField(cols[18]);
+      const paymentBatch = cleanMandiriField(cols[19]);
+      const tidBatch = cleanMandiriField(cols[20]);
+      const batchSeq = cleanMandiriField(cols[21]);
+      const amount = parseMandiriAmount(cols[22]);
+      const mdr = parseMandiriAmount(cols[24]);
+      const netAmt = parseMandiriAmount(cols[25]);
+
+      // Jenis transaksi (untuk pos_jenis_map): 'CREDIT' atau 'DEBIT'
+      const jenis = cardType.toUpperCase() === 'CREDIT' ? 'CREDIT'
+                  : cardType.toUpperCase() === 'DEBIT'  ? 'DEBIT'
+                  : 'CREDIT'; // default
+
+      transactions.push({
+        // Field standar (kompatibel dengan reconcile() & render):
+        mid, tid, merchant: tradingName,
+        tgl_trx: trxDate,
+        tgl_rk: paymentDate,        // tanggal cair = PAYMENT DATE
+        amt_trx: amount,            // gross
+        disc_amt: mdr,
+        net_amt: netAmt,
+        amt_setl: 0,                // tidak dipakai langsung untuk Mandiri
+        remark_rk: paymentBatch,    // PAYMENT BATCH = identifier batch
+        card,
+        principle: principal,       // Visa/MasterCard (display)
+        issuer: cardType,           // Credit/Debit (display)
+        aprv: authCode,
+        tipe: jenis,                // CREDIT/DEBIT (untuk jenis_mapping)
+        batch_num: batchSeq,
+        bank: 'MANDIRI',
+        // Field tambahan Mandiri:
+        bank_account: bankAccount,
+        bank_account_name: bankAccountName,
+        settle_date: settleDate,
+        description,                // Retail / Installment
+        payment_batch: paymentBatch,
+        tid_batch: tidBatch,
+        mandiri_file_type: 'CC_DEBIT',
+        source_file: filename,
+      });
+    } else {
+      // QR (408): 15 kolom
+      if (cols.length < 14) continue;
+      const nmid = cleanMandiriField(cols[0]);
+      const mid = cleanMandiriField(cols[1]);
+      if (!mid) continue;
+      stats.total_detail++;
+      if (allowedMids && !allowedMids.has(mid)) { stats.foreign_mid++; continue; }
+
+      const tradingName = cleanMandiriField(cols[3]);
+      const bankAccount = cleanMandiriField(cols[4]);
+      const bankAccountName = cleanMandiriField(cols[5]);
+      const trxDate = mandiriDateToIso(cols[6]);
+      const trxTime = cleanMandiriField(cols[7]);
+      const issuerName = cleanMandiriField(cols[8]);
+      const tid = cleanMandiriField(cols[9]);
+      const refNo = cleanMandiriField(cols[10]);
+      const refId = cleanMandiriField(cols[11]);
+      const amount = parseMandiriAmount(cols[12]);
+      const mdr = parseMandiriAmount(cols[13]);
+      const netAmt = parseMandiriAmount(cols[14]);
+
+      // QR PAYMENT DATE: asumsikan T+1 (sesuai keputusan user)
+      const paymentDate = addDaysIso(trxDate, 1);
+
+      transactions.push({
+        mid, tid, merchant: tradingName,
+        tgl_trx: trxDate,
+        tgl_rk: paymentDate,        // T+1
+        amt_trx: amount,
+        disc_amt: mdr,
+        net_amt: netAmt,
+        amt_setl: 0,
+        remark_rk: bankAccount,     // QR group by Bank Account
+        card: '',
+        principle: issuerName,      // Bank issuer (Mandiri, OCBC, dst)
+        issuer: 'QRIS',
+        aprv: refNo,                // Refference Number sebagai 'approval'
+        tipe: 'QRIS',
+        batch_num: '',
+        bank: 'MANDIRI',
+        bank_account: bankAccount,
+        bank_account_name: bankAccountName,
+        settle_date: trxDate,       // QR tidak punya settle date eksplisit
+        description: 'QR Payment',
+        payment_batch: '',          // QR tidak punya batch
+        tid_batch: '',
+        nmid,
+        ref_id: refId,
+        trx_time: trxTime,
+        mandiri_file_type: 'QR',
+        source_file: filename,
+      });
+    }
+  }
+
+  // === Parse SUMMARY rows (untuk total dana cair per batch / payment date) ===
+  if (summaryStart !== -1 && summaryEnd !== -1) {
+    for (let i = summaryStart; i < summaryEnd; i++) {
+      const cols = parseCsvLineGeneric(rows[i], ',');
+      if (!cols || cols.length === 0) continue;
+
+      if (fileType === 'CC_DEBIT') {
+        // Header summary CC: [0]=MID [1]=Merchant [2]=Trading [3]=BankAcc [4]=PAYMENTDATE
+        //   [5]=NETWORK [6]=DESCRIPTION [7]=PAYMENTBATCH [8]=TXN COUNT
+        //   [9]=TOTAMOUNT [10]=MDRAMOUNT [11]=NETAMOUNT
+        if (cols.length < 12) continue;
+        const mid = cleanMandiriField(cols[0]);
+        if (!mid) continue;
+        stats.total_summary++;
+        if (allowedMids && !allowedMids.has(mid)) continue;
+        summaries.push({
+          mid,
+          trading_name: cleanMandiriField(cols[2]),
+          bank_account: cleanMandiriField(cols[3]),
+          payment_date: mandiriDateToIso(cols[4]),
+          network: cleanMandiriField(cols[5]),
+          description: cleanMandiriField(cols[6]),
+          payment_batch: cleanMandiriField(cols[7]),
+          txn_count: parseInt(cols[8]) || 0,
+          gross: parseMandiriAmount(cols[9]),
+          mdr: parseMandiriAmount(cols[10]),
+          net: parseMandiriAmount(cols[11]),
+          file_type: 'CC_DEBIT',
+        });
+      } else {
+        // Header summary QR: [0]=NMID [1]=MID [2]=Merchant [3]=Trading [4]=BankAcc
+        //   [5]=BankAccName [6]=PAYMENT DATE [7]=TOTAL AMOUNT [8]=TOTAL MDR [9]=TOTAL NET AMOUNT
+        if (cols.length < 10) continue;
+        const mid = cleanMandiriField(cols[1]);
+        if (!mid) continue;
+        stats.total_summary++;
+        if (allowedMids && !allowedMids.has(mid)) continue;
+        summaries.push({
+          mid,
+          trading_name: cleanMandiriField(cols[3]),
+          bank_account: cleanMandiriField(cols[4]),
+          payment_date: mandiriDateToIso(cols[6]),
+          gross: parseMandiriAmount(cols[7]),
+          mdr: parseMandiriAmount(cols[8]),
+          net: parseMandiriAmount(cols[9]),
+          file_type: 'QR',
+        });
+      }
+    }
+  }
+
+  return { transactions, summaries, stats };
+}
+
+// Wrapper: extract 1 ZIP Mandiri (AES) → parse semua CSV di dalamnya.
+// Return: { transactions, summaries, stats, fileType }
+async function parseMandiriZip(file, password, allowedMids) {
+  const csvs = await extractAesZip(file, password);
+  const allTransactions = [];
+  const allSummaries = [];
+  const stats = { foreign_mid: 0, total_detail: 0, total_summary: 0, fileTypes: new Set() };
+  for (const c of csvs) {
+    const fileType = detectMandiriFileType(c.name);
+    if (!fileType) {
+      // Unknown type, skip dengan warning
+      continue;
+    }
+    stats.fileTypes.add(fileType);
+    const result = parseMandiriCsv(c.content, fileType, allowedMids, c.name);
+    allTransactions.push(...result.transactions);
+    allSummaries.push(...result.summaries);
+    stats.foreign_mid += result.stats.foreign_mid;
+    stats.total_detail += result.stats.total_detail;
+    stats.total_summary += result.stats.total_summary;
+  }
+  return { transactions: allTransactions, summaries: allSummaries, stats };
+}
+
+// ============================================================
+// MANDIRI VALIDATOR
+// ============================================================
+async function validateBankMandiri(bankFiles, outletCode, password) {
+  const outlet = OUTLET_REGISTRY[outletCode];
+  if (!outlet) return { ok: false, message: `Outlet ${outletCode} tidak ada di registry.` };
+
+  const bankCfg = outlet.banks.MANDIRI;
+  if (!bankCfg || !bankCfg.mids || bankCfg.mids.length === 0) {
+    return { ok: false, message: `MID Mandiri untuk ${outlet.display_name} belum terdaftar di registry.` };
+  }
+
+  if (!password) {
+    return { ok: false, message: `Password ZIP Mandiri wajib diisi. Default: 12600293` };
+  }
+
+  const allowedMids = new Set(bankCfg.mids);
+  const foundMids = new Map();   // mid -> { name, count }
+  let plsRows = 0;
+  let totalRows = 0;
+  const perType = { CC_DEBIT: 0, QR: 0 };
+  const perJenis = { CREDIT: 0, DEBIT: 0, QRIS: 0 };
+
+  for (const f of bankFiles) {
+    if (!f.name.toLowerCase().endsWith('.zip')) {
+      return { ok: false, message: `File Mandiri harus berupa ZIP. File <b>${f.name}</b> bukan ZIP.` };
+    }
+
+    let csvs;
+    try {
+      csvs = await extractAesZip(f, password);
+    } catch (e) {
+      return { ok: false, message: `Gagal extract <b>${f.name}</b>: ${e.message}. Cek password.` };
+    }
+
+    for (const c of csvs) {
+      const fileType = detectMandiriFileType(c.name);
+      if (!fileType) {
+        return { ok: false, message: `File CSV <b>${c.name}</b> tidak dikenali tipe-nya (bukan _403_/_408_).` };
+      }
+
+      // Parse minimal — cuma untuk stats validasi
+      const rows = c.content.split(/\r?\n/);
+      let detailStart = -1, detailEnd = -1;
+      for (let i = 0; i < rows.length; i++) {
+        if (/^DETAIL,/.test(rows[i]) && detailStart === -1) detailStart = i + 2;
+        else if (/^TOTAL,/.test(rows[i]) && detailStart !== -1 && detailEnd === -1) { detailEnd = i; break; }
+      }
+      if (detailStart === -1 || detailEnd === -1) continue;
+
+      for (let i = detailStart; i < detailEnd; i++) {
+        const cols = parseCsvLineGeneric(rows[i], ',');
+        if (!cols || cols.length === 0) continue;
+        // Index MID berbeda CC vs QR
+        const midIdx = (fileType === 'CC_DEBIT') ? 0 : 1;
+        const nameIdx = (fileType === 'CC_DEBIT') ? 2 : 3;
+        const mid = cleanMandiriField(cols[midIdx]);
+        if (!mid) continue;
+        const name = cleanMandiriField(cols[nameIdx]);
+        totalRows++;
+        if (!foundMids.has(mid)) foundMids.set(mid, { name, count: 0 });
+        foundMids.get(mid).count++;
+
+        if (allowedMids.has(mid)) {
+          plsRows++;
+          perType[fileType]++;
+          // Jenis untuk CC_DEBIT: kolom 16 (Card Type)
+          if (fileType === 'CC_DEBIT' && cols.length > 16) {
+            const ct = cleanMandiriField(cols[16]).toUpperCase();
+            if (ct === 'CREDIT') perJenis.CREDIT++;
+            else if (ct === 'DEBIT') perJenis.DEBIT++;
+          } else if (fileType === 'QR') {
+            perJenis.QRIS++;
+          }
+        }
+      }
+    }
+  }
+
+  if (totalRows === 0) {
+    return { ok: false, message: `Tidak ada baris transaksi yang terbaca. Cek apakah file ZIP/CSV valid.` };
+  }
+
+  if (plsRows === 0) {
+    const otherOutlets = [];
+    for (const [mid, info] of foundMids.entries()) {
+      otherOutlets.push(`${info.name || '(unknown)'} (MID ${mid}, ${info.count} trx)`);
+    }
+    return {
+      ok: false,
+      message: `Tidak ada transaksi untuk outlet <b>${outlet.display_name}</b> (MID <b>${[...allowedMids].join(', ')}</b>).<br>File berisi: ${otherOutlets.slice(0, 5).join(', ')}${otherOutlets.length > 5 ? ` +${otherOutlets.length - 5} lainnya` : ''}`
+    };
+  }
+
+  // Compose detail message
+  const typeBreakdown = Object.entries(perType).filter(([_, c]) => c > 0).map(([k, c]) => `${k}: ${c}`).join(', ');
+  const jenisBreakdown = Object.entries(perJenis).filter(([_, c]) => c > 0).map(([k, c]) => `${k}: ${c}`).join(', ');
+  const otherOutlets = [];
+  for (const [mid, info] of foundMids.entries()) {
+    if (!allowedMids.has(mid)) otherOutlets.push(`${info.name || '(unknown)'} (${info.count} trx)`);
+  }
+
+  let detailMsg = `${bankFiles.length} ZIP · MID <b>${[...allowedMids].join(', ')}</b> · <b>${plsRows}</b> trx untuk ${outlet.display_name}`;
+  if (totalRows > plsRows) detailMsg += ` dari ${totalRows} total (${foundMids.size} outlet di file)`;
+  if (typeBreakdown) detailMsg += `<br>📁 Tipe file: ${typeBreakdown}`;
+  if (jenisBreakdown) detailMsg += `<br>📊 Jenis: ${jenisBreakdown}`;
+  if (otherOutlets.length > 0) detailMsg += `<br>⊘ Di-skip: ${otherOutlets.slice(0, 5).join(', ')}${otherOutlets.length > 5 ? ` +${otherOutlets.length - 5} lainnya` : ''}`;
+
+  return {
+    ok: true,
+    message: detailMsg,
+    totalRows: plsRows,
+    plsRows, totalAllRows: totalRows,
+    foundMids,
+    perType, perJenis,
+  };
+}
+
+function parseCsvLine(line) {
+  // BRI: semicolon-delimited
+  return parseCsvLineGeneric(line, ';');
+}
+
+function parseCsvLineGeneric(line, delim) {
+  if (!line || !line.trim()) return [];
+  const result = [];
+  let current = '';
+  let inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') inQuote = !inQuote;
+    else if (ch === delim && !inQuote) {
+      result.push(current.trim());
+      current = '';
+    } else current += ch;
+  }
+  result.push(current.trim());
+  return result.map(v => v.replace(/^["']|["']$/g, '').replace(/^'|'$/g, ''));
+}
+
+// ============================================================
+// EXTRACT ZIP
+// ============================================================
+async function extractZip(file) {
+  const zip = await JSZip.loadAsync(file);
+  const csvs = [];
+  for (const fname of Object.keys(zip.files)) {
+    if (fname.toLowerCase().includes('detail') && fname.toLowerCase().endsWith('.csv')) {
+      const content = await zip.files[fname].async('text');
+      csvs.push({ name: fname, content });
+    }
+  }
+  return csvs;
+}
+
+// ============================================================
+// ★ WIRING: hubungkan BANK_REGISTRY ke function-nya
+// ============================================================
+// Function reference baru bisa diset DI SINI (setelah definisinya selesai).
+// Tambah bank baru = bikin validator+parser, lalu wire-up di sini.
+BANK_REGISTRY.BRI.validator = validateBankBRI;
+BANK_REGISTRY.BRI.parserSpec.func = parseBRIDetail;
+BANK_REGISTRY.BCA.validator = validateBankBCA;
+BANK_REGISTRY.BCA.parserSpec.func = parseBCADetail;
+BANK_REGISTRY.BNI.validator = validateBankBNI;
+BANK_REGISTRY.BNI.parserSpec.func = parseBniZip;
+BANK_REGISTRY.MANDIRI.validator = validateBankMandiri;
+BANK_REGISTRY.MANDIRI.parserSpec.func = parseMandiriZip;
+
+// ============================================================
+// GENERIC BANK FILE LOADER + PARSER
+// ============================================================
+// Loader generic: baca file bank → return rows transaksi.
+// Cara extract & parse ditentukan dari BANK_REGISTRY[bankCode].parserSpec.
+// Return: { transactions: [], settlements: [], logLines: [] }
+//
+// logLines: array of {file, info} untuk ditampilkan ke user (sebelumnya inline log
+// di runReconciliation()). Dengan begini runReconciliation() tidak perlu tau
+// detail per-bank — semua di-handle di sini.
+async function loadAndParseBankFiles(bankFiles, outletCode, bankCode, password) {
+  const cfg = BANK_REGISTRY[bankCode];
+  if (!cfg) throw new Error(`Bank ${bankCode} tidak di-registry.`);
+  const spec = cfg.parserSpec;
+  if (!spec || typeof spec.func !== 'function') {
+    throw new Error(`Parser untuk bank ${bankCode} belum diimplementasi.`);
+  }
+
+  // Siapkan parser opts berdasar flag
+  let parserOpts = null;
+  if (spec.needsTids) {
+    parserOpts = new Set(getBcaTidsForOutlet(outletCode));
+  } else if (spec.needsMids) {
+    const outlet = OUTLET_REGISTRY[outletCode];
+    const mids = (outlet && outlet.banks && outlet.banks[bankCode] && outlet.banks[bankCode].mids) || [];
+    parserOpts = new Set(mids);
+  }
+
+  const transactions = [];
+  const settlements = [];
+  const logLines = [];
+
+  for (const f of bankFiles) {
+    // === EXTRACT FILE → list of CSV/XLSX content ===
+    // 'zip_csv'      : JSZip standard, CSV inside (BRI)
+    // 'aes_zip_csv'  : zip.js dengan password, CSV inside (BCA)
+    // 'zip_native'   : parser handle ZIP sendiri (BNI — parser baca XLSX langsung)
+    // 'plain_text'   : single CSV file, no zip
+    if (spec.extract === 'zip_native') {
+      // Parser handle ZIP sendiri (mis. parseBniZip)
+      if (!f.name.toLowerCase().endsWith('.zip')) {
+        logLines.push({ file: f.name, info: 'bukan ZIP, skip', warn: true });
+        continue;
+      }
+      const result = await spec.func(f, parserOpts);
+      transactions.push(...(result.transactions || []));
+      if (result.settlements) settlements.push(...result.settlements);
+      // Info log: per-bank bisa beda format
+      const infoStr = formatParserInfoLog(bankCode, result);
+      logLines.push({ file: f.name, info: infoStr });
+    } else if (spec.extract === 'zip_csv') {
+      // Plain ZIP berisi CSV (BRI)
+      let csvs = [];
+      if (f.name.toLowerCase().endsWith('.zip')) {
+        csvs = await extractZip(f);
+      } else {
+        const text = await readFileText(f);
+        csvs = [{ name: f.name, content: text }];
+      }
+      for (const c of csvs) {
+        const result = spec.func(c.content, parserOpts);
+        // result bisa array (BRI lama) atau object (BCA-like)
+        if (Array.isArray(result)) {
+          transactions.push(...result);
+          logLines.push({ file: `${f.name} / ${c.name}`, info: `${result.length} trx` });
+        } else {
+          transactions.push(...(result.transactions || []));
+          if (result.settlements) settlements.push(...result.settlements);
+          logLines.push({ file: `${f.name} / ${c.name}`, info: formatParserInfoLog(bankCode, result) });
+        }
+      }
+    } else if (spec.extract === 'aes_zip_csv') {
+      // AES ZIP berisi CSV (BCA)
+      let csvs = [];
+      if (f.name.toLowerCase().endsWith('.zip')) {
+        csvs = await extractAesZip(f, password);
+      } else {
+        const text = await readFileText(f);
+        csvs = [{ name: f.name, content: text }];
+      }
+      for (const c of csvs) {
+        const result = spec.func(c.content, parserOpts);
+        if (Array.isArray(result)) {
+          transactions.push(...result);
+          logLines.push({ file: `${f.name} / ${c.name}`, info: `${result.length} trx` });
+        } else {
+          transactions.push(...(result.transactions || []));
+          if (result.settlements) settlements.push(...result.settlements);
+          logLines.push({ file: `${f.name} / ${c.name}`, info: formatParserInfoLog(bankCode, result) });
+        }
+      }
+    } else if (spec.extract === 'plain_text') {
+      const text = await readFileText(f);
+      const result = spec.func(text, parserOpts);
+      if (Array.isArray(result)) {
+        transactions.push(...result);
+        logLines.push({ file: f.name, info: `${result.length} trx` });
+      } else {
+        transactions.push(...(result.transactions || []));
+        if (result.settlements) settlements.push(...result.settlements);
+        logLines.push({ file: f.name, info: formatParserInfoLog(bankCode, result) });
+      }
+    } else if (spec.extract === 'mandiri_aes_zip') {
+      // MANDIRI: 1 ZIP berisi 1 CSV (CC_DEBIT atau QR). Password AES sama seperti BCA.
+      // Parser sendiri yang handle ZIP (parseMandiriZip).
+      if (!f.name.toLowerCase().endsWith('.zip')) {
+        logLines.push({ file: f.name, info: 'bukan ZIP, skip', warn: true });
+        continue;
+      }
+      const result = await spec.func(f, password, parserOpts);
+      transactions.push(...(result.transactions || []));
+      // Mandiri pakai 'settlements' slot untuk SUMMARY GROUP rows (untuk Total Dana Cair display)
+      if (result.summaries) settlements.push(...result.summaries);
+      logLines.push({ file: f.name, info: formatParserInfoLog(bankCode, result) });
+    } else {
+      throw new Error(`Extract method '${spec.extract}' belum di-support.`);
+    }
+  }
+
+  return { transactions, settlements, logLines };
+}
+
+// Helper: format info log dari hasil parser (per-bank punya field statistik berbeda).
+function formatParserInfoLog(bankCode, result) {
+  if (bankCode === 'BNI' && result.stats) {
+    const jenisStr = Object.entries(result.stats.perJenis || {})
+      .filter(([_, c]) => c > 0)
+      .map(([k, c]) => `${k}:${c}`)
+      .join(' ');
+    const trxCount = (result.transactions || []).length;
+    return `${trxCount} trx (${jenisStr}), ${result.stats.foreignMid} MID asing di-skip`;
+  }
+  if (bankCode === 'BCA' && result.skipped) {
+    const trxCount = (result.transactions || []).length;
+    const setlCount = (result.settlements || []).length;
+    return `${trxCount} trx, ${setlCount} settlements, ${result.skipped.foreign_tid} TID asing di-skip`;
+  }
+  if (bankCode === 'MANDIRI' && result.stats) {
+    const trxCount = (result.transactions || []).length;
+    const sumCount = (result.summaries || []).length;
+    const types = result.stats.fileTypes ? [...result.stats.fileTypes].join('/') : '';
+    return `${trxCount} trx (${types}), ${sumCount} summary entries, ${result.stats.foreign_mid} MID asing di-skip`;
+  }
+  return `${(result.transactions || []).length} trx`;
+}
+
+// ============================================================
+// RECONCILE LOGIC (mirror dari Python)
+// ============================================================
+function dateDiff(d1, d2) {
+  const t1 = new Date(d1).getTime();
+  const t2 = new Date(d2).getTime();
+  return Math.abs((t1 - t2) / (1000 * 60 * 60 * 24));
+}
+
+// === Helper untuk matching POS ↔ bank-row berdasarkan label ===
+//
+// Untuk BRI & BCA: simple — POS bank_keyword harus = bankCode untuk dianggap EXACT.
+// Untuk BNI: ada jenis transaksi (KREDIT/DEBIT/QRIS/TAPCASH), dan POS punya
+// sub-label (BNI VISA/MASTER/AMEX = CC, BNI DEBIT = non-CC).
+//   Mapping:
+//     POS "BNI VISA" / "BNI MASTER" / "BNI AMEX" → BANK jenis = KREDIT (exact)
+//     POS "BNI DEBIT" → BANK jenis = DEBIT, QRIS, atau TAPCASH (exact)
+// Kalau label POS = BNI tapi sub-label tidak cocok jenis bank → tetap dianggap REVIEW
+// (jarang terjadi karena BNI VISA otomatis ke KREDIT).
+//
+// Return true kalau POS dianggap EXACT match untuk bank row tertentu.
+function isPosExactForBankRow(pos, bankRow, bankCode) {
+  if (pos.bank_keyword !== bankCode) return false;
+
+  const cfg = BANK_REGISTRY[bankCode];
+  if (!cfg) return true;  // bank tidak di-registry, lenient
+
+  // === SIMPLE MATCH (BRI, BCA, Mandiri biasanya) ===
+  // Cukup label POS == bankCode → exact. Tidak ada jenis transaksi yang harus dicocokkan.
+  if (cfg.pos_match_rule === 'simple' || !cfg.pos_match_rule) {
+    return true;
+  }
+
+  // === JENIS MAPPING (BNI, Mandiri, BCA, BRI di v8) ===
+  // POS DEBIT bisa nyangkut di BANK jenis QRIS/TAPCASH. Pakai pos_jenis_map untuk
+  // tentukan regex apa yang harus dicocokkan untuk tiap jenis bank.
+  if (cfg.pos_match_rule === 'jenis_mapping') {
+    const map = cfg.pos_jenis_map || {};
+    const desc = (pos.payment_type || '').toUpperCase();
+    // Prioritas field bank-side (v8):
+    //   1. kartu_jenis  → BRI (derived dari TIPE), BCA (derived dari getBcaKartuType)
+    //   2. bni_jenis    → BNI (KREDIT/DEBIT/QRIS/TAPCASH)
+    //   3. tipe         → Mandiri (CREDIT/DEBIT/QRIS) — fallback umum
+    const jenis = (bankRow.kartu_jenis || bankRow.bni_jenis || bankRow.tipe || '').toUpperCase();
+
+    const regex = map[jenis];
+    if (!regex) return true;  // jenis tidak terdaftar di map → lenient (mark exact)
+    return regex.test(desc);
+  }
+
+  return true;
+}
+
+function reconcile(posAll, bankAll, bankCode) {
+  // bankCode: 'BRI' / 'BCA' / 'BNI' — menentukan label POS yang dianggap "exact match"
+  const posUsed = new Set();
+  const results = [];
+  
+  const sig = (p) => `${p.pos_date}|${p.bill_no}|${p.internal_ref}`;
+  
+  const bankSorted = [...bankAll].sort((a, b) => b.amt_trx - a.amt_trx);
+  
+  for (const b of bankSorted) {
+    const candExact = posAll.filter(p =>
+      !posUsed.has(sig(p)) &&
+      isPosExactForBankRow(p, b, bankCode) &&
+      Math.abs(p.amount - b.amt_trx) < 1 &&
+      dateDiff(p.pos_date, b.tgl_trx) <= 1
+    );
+    const candReview = posAll.filter(p =>
+      !posUsed.has(sig(p)) &&
+      !isPosExactForBankRow(p, b, bankCode) &&
+      Math.abs(p.amount - b.amt_trx) < 1 &&
+      dateDiff(p.pos_date, b.tgl_trx) <= 1
+    );
+    
+    if (candExact.length === 1) {
+      const chosen = candExact[0];
+      posUsed.add(sig(chosen));
+      results.push({
+        bank: b, status: 'MATCH_EXACT', pos: chosen,
+        candidates: [chosen, ...candReview],
+        other_candidates: candReview,
+      });
+    } else if (candExact.length > 1) {
+      results.push({
+        bank: b, status: 'AMBIGUOUS', pos: null,
+        candidates: [...candExact, ...candReview],
+        other_candidates: [],
+      });
+    } else if (candReview.length === 1) {
+      const chosen = candReview[0];
+      posUsed.add(sig(chosen));
+      results.push({
+        bank: b, status: 'MATCH_REVIEW', pos: chosen,
+        candidates: [chosen], other_candidates: [],
+      });
+    } else if (candReview.length > 1) {
+      results.push({
+        bank: b, status: 'AMBIGUOUS_REVIEW', pos: null,
+        candidates: candReview, other_candidates: [],
+      });
+    } else {
+      results.push({
+        bank: b, status: 'UNMATCH_BANK', pos: null,
+        candidates: [], other_candidates: [],
+      });
+    }
+  }
+  
+  const unmatchPos = posAll.filter(p =>
+    p.bank_keyword === bankCode && !posUsed.has(sig(p))
+  );
+  
+  return { results, unmatchPos };
+}
+
+// ============================================================
+// MAIN PROCESS
+// ============================================================
+let lastResults = null;
+let lastUnmatchPos = null;
+let lastBankSettlements = [];
+let lastBankCode = 'BRI';
+let lastOutletCode = 'PLS';
+
+async function runReconciliation() {
+  clearLog();
+  document.getElementById('processBtn').disabled = true;
+  document.getElementById('results').classList.remove('visible');
+  
+  const outletCode = document.getElementById('outletSelect').value;
+  const bankCode = document.getElementById('bankSelect').value;
+  const password = (document.getElementById('bankPassword').value || '').trim();
+  
+  try {
+    // ============================================================
+    // STEP 0: VALIDASI OUTLET (filename POS + MID/TID bank)
+    // ============================================================
+    log('Validasi outlet...', 'info');
+    
+    // Validasi filename POS
+    const posVal = validatePosFilename(posFile, outletCode);
+    if (!posVal.ok) {
+      showValidationStatus('pos', 'err', posVal.message);
+      log(`  ✗ POS: ${posVal.message.replace(/<[^>]+>/g, '')}`, 'err');
+      throw new Error('Validasi POS gagal. Periksa nama file atau outlet yang dipilih.');
+    }
+    showValidationStatus('pos', 'ok', posVal.message);
+    log(`  ✓ POS: ${posFile.name} cocok untuk outlet ${OUTLET_REGISTRY[outletCode].display_name}`, 'info');
+    
+    // Validasi bank (BRI atau BCA — dispatcher)
+    const bankVal = await validateBank(bankFiles, outletCode, bankCode, password);
+    if (!bankVal.ok) {
+      showValidationStatus('bank', 'err', bankVal.message);
+      log(`  ✗ Bank: ${bankVal.message.replace(/<[^>]+>/g, '').replace(/<br>/g, ' ')}`, 'err');
+      throw new Error('Validasi bank gagal. Periksa file atau outlet yang dipilih.');
+    }
+    showValidationStatus('bank', 'ok', bankVal.message);
+    log(`  ✓ Bank: validasi OK (${bankVal.totalRows} trx untuk outlet ini)`, 'info');
+    
+    // ============================================================
+    // STEP 1: PARSING
+    // ============================================================
+    log('Membaca file POS...', 'info');
+    const posText = await readFileText(posFile);
+    const outletCfgForPos = OUTLET_REGISTRY[outletCode];
+    const posSystem = outletCfgForPos ? outletCfgForPos.pos_system : 'VHP';
+    log(`  POS system: ${posSystem}`, 'info');
+    const posAll = parsePOSAuto(posText, posSystem);
+    log(`  → ${posAll.length} transaksi payment ditemukan`, 'info');
+
+    // Log format stats kalau ada (VHP TXT bisa Format A 'PLS-style' atau B 'SMB-style')
+    const fmtStats = window.__lastParsePosFormatStats;
+    if (fmtStats && (fmtStats.formatA > 0 || fmtStats.formatB > 0)) {
+      const parts = [];
+      if (fmtStats.formatA > 0) parts.push(`Format A (PLS-style): ${fmtStats.formatA}`);
+      if (fmtStats.formatB > 0) parts.push(`Format B (SMB-style): ${fmtStats.formatB}`);
+      log(`     ${parts.join(' | ')}`, 'info');
+    }
+
+    // Log normalisasi label generic (JCB CARD / AMEX tanpa prefix bank → BCA)
+    const normMap = window.__lastParsePosNormalizations;
+    if (normMap && normMap.size > 0) {
+      log(`  ℹ Label generic dinormalisasi sebagai BCA CC:`, 'info');
+      for (const [k, cnt] of normMap.entries()) {
+        log(`     • ${k} (${cnt}x)`, 'info');
+      }
+    }
+
+    const posBankCount = posAll.filter(p => p.bank_keyword === bankCode).length;
+    log(`  → ${posBankCount} transaksi berlabel ${bankCode}`, 'info');
+
+    // === Unknown keyword detector ===
+    // Warning kalau parsePOS menemukan baris yang format-nya payment tapi keyword
+    // belum terdaftar di BANK_REGISTRY. Bantu deteksi POS keyword baru untuk outlet lain.
+    const unknownKw = window.__lastParsePosUnknownKeywords;
+    if (unknownKw && unknownKw.size > 0) {
+      log(`  ⚠ ${unknownKw.size} keyword POS tidak terdaftar di BANK_REGISTRY:`, 'warn');
+      for (const [kw, cnt] of unknownKw.entries()) {
+        log(`     • "${kw}" (${cnt}x)`, 'warn');
+      }
+      log(`  → Kalau ini keyword payment yang valid, tambahkan ke BANK_REGISTRY.{BANK}.pos_keywords`, 'warn');
+    }
+
+    log('Membaca file bank...', 'info');
+    // === Parser generic — semua bank pakai loadAndParseBankFiles ===
+    // Per-bank logic ada di BANK_REGISTRY[bankCode].parserSpec.
+    // Tambah bank baru = tambah entry di registry, dispatcher ini tidak perlu disentuh.
+    const loaded = await loadAndParseBankFiles(bankFiles, outletCode, bankCode, password);
+    const bankAll = loaded.transactions;
+    const bankSettlements = loaded.settlements;
+    for (const ll of loaded.logLines) {
+      log(`  → ${ll.file}: ${ll.info}`, ll.warn ? 'warn' : '');
+    }
+    
+    log(`Total bank (untuk matching): ${bankAll.length} transaksi`, 'info');
+    if (bankSettlements.length > 0) {
+      log(`Total bank settlement entries: ${bankSettlements.length}`, 'info');
+    }
+    
+    log('Menjalankan rekonsiliasi...', 'info');
+    const { results, unmatchPos } = reconcile(posAll, bankAll, bankCode);
+    
+    const counts = {
+      EXACT: results.filter(r => r.status === 'MATCH_EXACT').length,
+      REVIEW: results.filter(r => r.status === 'MATCH_REVIEW').length,
+      AMBIG: results.filter(r => r.status === 'AMBIGUOUS' || r.status === 'AMBIGUOUS_REVIEW').length,
+      UNMATCH: results.filter(r => r.status === 'UNMATCH_BANK').length,
+    };
+    log(`  Exact: ${counts.EXACT} | Review: ${counts.REVIEW} | Ambig: ${counts.AMBIG} | Unmatch Bank: ${counts.UNMATCH} | Unmatch POS: ${unmatchPos.length}`, 'info');
+    
+    lastResults = results;
+    lastUnmatchPos = unmatchPos;
+    // Reset sort state setiap proses baru — supaya default sort yang aktif
+    __sortState.allTrx = { col: null, dir: null };
+    __sortState.unmatchPos = { col: null, dir: null };
+    lastBankSettlements = bankSettlements;
+    lastBankCode = bankCode;
+    lastOutletCode = outletCode;
+    
+    renderResults(results, unmatchPos, bankCode, bankSettlements);
+    log('✓ Selesai!', 'info');
+  } catch (err) {
+    log(`ERROR: ${err.message}`, 'err');
+    console.error(err);
+  } finally {
+    document.getElementById('processBtn').disabled = false;
+  }
+}
+
+function readFileText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsText(file);
+  });
+}
+
+// ============================================================
+// RENDER RESULTS
+// ============================================================
+function fmt(n) {
+  if (n === 0 || !n) return '-';
+  return n.toLocaleString('id-ID', { maximumFractionDigits: 0 });
+}
+
+// ============================================================
+// RENDER & EXCEL — Versi 2: Bank-aware, 3-sheet format
+// ============================================================
+//
+// Output format:
+//   Sheet 1: Summary           — group by (tgl_cair, tipe_kartu) untuk BCA / (tgl_rk, remark_rk) untuk BRI
+//   Sheet 2: All Transactions  — match (exact/review) + unmatch bank + ambig dalam 1 sheet
+//   Sheet 3: Unmatch POS       — POS yang tidak ketemu di bank
+//
+// Common helpers untuk normalize antar bank
+
+function renderResults(results, unmatchPos, bankCode, bankSettlements) {
+  bankCode = bankCode || lastBankCode || 'BRI';
+  bankSettlements = bankSettlements || [];
+  
+  const exactList = results.filter(r => r.status === 'MATCH_EXACT');
+  const reviewList = results.filter(r => r.status === 'MATCH_REVIEW');
+  const ambigList = results.filter(r => r.status === 'AMBIGUOUS' || r.status === 'AMBIGUOUS_REVIEW');
+  const unmatchList = results.filter(r => r.status === 'UNMATCH_BANK');
+  
+  // === Hitung total dana cair (settlement) ===
+  // BRI: pakai amt_setl per (tgl_rk, remark_rk) — sama seperti dulu
+  // BCA: pakai bankSettlements (S* + AS) yang sudah dipisah saat parsing
+  // BNI: hitung sum(net_amt) per (tgl_rk, jenis) — karena tidak ada AMT_SETL terpisah
+  let totalSetl = 0;
+  let setlCount = 0;
+  if (bankCode === 'BRI') {
+    const setlMap = new Map();
+    for (const r of results) {
+      const key = `${r.bank.tgl_rk}|${r.bank.remark_rk}`;
+      setlMap.set(key, r.bank.amt_setl);
+    }
+    totalSetl = [...setlMap.values()].reduce((a, b) => a + b, 0);
+    setlCount = setlMap.size;
+  } else if (bankCode === 'BCA') {
+    // Settlement = 1 entry per (tgl_cair, kartu) — sum net dari S*/AS
+    const setlMap = new Map();
+    for (const s of bankSettlements) {
+      const key = `${s.tgl_cair}|${s.kartu}`;
+      if (!setlMap.has(key)) setlMap.set(key, 0);
+      setlMap.set(key, setlMap.get(key) + s.net);
+    }
+    totalSetl = [...setlMap.values()].reduce((a, b) => a + b, 0);
+    setlCount = setlMap.size;
+  } else if (bankCode === 'BNI') {
+    // Settlement = 1 entry per (tgl_rk = PROC DATE, jenis = KREDIT/DEBIT/QRIS/TAPCASH)
+    // Total dana cair = sum NETT AMOUNT per group
+    const setlMap = new Map();
+    for (const r of results) {
+      const b = r.bank;
+      const key = `${b.tgl_rk}|${b.tipe}`;
+      if (!setlMap.has(key)) setlMap.set(key, 0);
+      setlMap.set(key, setlMap.get(key) + (b.net_amt || 0));
+    }
+    totalSetl = [...setlMap.values()].reduce((a, b) => a + b, 0);
+    setlCount = setlMap.size;
+  } else if (bankCode === 'MANDIRI') {
+    // Mandiri: sum dari summaries section (SUMMARY GROUP file).
+    // Tiap summary = 1 batch (CC) atau 1 payment-date (QR) — sudah pre-filtered ke MID outlet.
+    totalSetl = bankSettlements.reduce((a, s) => a + (s.net || 0), 0);
+    setlCount = bankSettlements.length;
+  }
+  
+  // Summary cards
+  const cards = document.getElementById('summaryCards');
+  cards.innerHTML = `
+    <div class="card">
+      <div class="card-label">Total Dana Cair</div>
+      <div class="card-value">Rp ${fmt(totalSetl)}</div>
+      <div class="card-sub">${setlCount} settlement entries (${bankCode})</div>
+    </div>
+    <div class="card exact">
+      <div class="card-label">Match Exact</div>
+      <div class="card-value">${exactList.length}</div>
+      <div class="card-sub">Rp ${fmt(exactList.reduce((s, r) => s + r.bank.amt_trx, 0))}</div>
+    </div>
+    <div class="card review">
+      <div class="card-label">Match Review</div>
+      <div class="card-value">${reviewList.length}</div>
+      <div class="card-sub">Label POS / sub-jenis salah</div>
+    </div>
+    <div class="card ambig">
+      <div class="card-label">Ambiguous</div>
+      <div class="card-value">${ambigList.length}</div>
+      <div class="card-sub">Perlu review manual</div>
+    </div>
+    <div class="card unmatch">
+      <div class="card-label">Unmatch Bank</div>
+      <div class="card-value">${unmatchList.length}</div>
+      <div class="card-sub">Rp ${fmt(unmatchList.reduce((s, r) => s + r.bank.amt_trx, 0))}</div>
+    </div>
+    <div class="card unmatch">
+      <div class="card-label">Unmatch POS</div>
+      <div class="card-value">${unmatchPos.length}</div>
+      <div class="card-sub">Rp ${fmt(unmatchPos.reduce((s, p) => s + p.amount, 0))}</div>
+    </div>
+  `;
+  
+  // Update tab counts
+  const allTrxCount = exactList.length + reviewList.length + ambigList.length + unmatchList.length;
+  document.getElementById('tabAllCount').textContent = `(${allTrxCount})`;
+  document.getElementById('tabUPCount').textContent = `(${unmatchPos.length})`;
+  
+  // Render 3 tabs
+  renderSummaryTabV2(results, bankCode, bankSettlements);
+  renderAllTrxTab(results, bankCode);
+  renderUnmatchPosTabV2(unmatchPos, ambigList, bankCode);
+  
+  document.getElementById('results').classList.add('visible');
+}
+
+// ============================================================
+// SUMMARY TAB
+// ============================================================
+function renderSummaryTabV2(results, bankCode, bankSettlements) {
+  if (bankCode === 'BRI') {
+    renderSummaryTabBRI(results);
+  } else if (bankCode === 'BCA') {
+    renderSummaryTabBCA(results, bankSettlements);
+  } else if (bankCode === 'BNI') {
+    renderSummaryTabBNI(results);
+  } else if (bankCode === 'MANDIRI') {
+    renderSummaryTabMandiri(results, bankSettlements);
+  }
+}
+
+function renderSummaryTabBRI(results) {
+  // Group by (tgl_rk, remark_rk) — sama seperti versi lama
+  const groups = new Map();
+  for (const r of results) {
+    const b = r.bank;
+    const key = `${b.tgl_rk}|${b.remark_rk}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        tgl_rk: b.tgl_rk, remark_rk: b.remark_rk, amt_setl: b.amt_setl,
+        tipes: new Set(), trx_qty: 0, gross: 0, mdr: 0, net: 0,
+        exact_qty: 0, exact_amt: 0, review_qty: 0, review_amt: 0,
+        ambig_qty: 0, ambig_amt: 0, unmatch_qty: 0, unmatch_amt: 0,
+      });
+    }
+    const g = groups.get(key);
+    g.tipes.add(b.tipe);
+    g.trx_qty++; g.gross += b.amt_trx; g.mdr += b.disc_amt; g.net += b.net_amt;
+    if (r.status === 'MATCH_EXACT') { g.exact_qty++; g.exact_amt += b.amt_trx; }
+    else if (r.status === 'MATCH_REVIEW') { g.review_qty++; g.review_amt += b.amt_trx; }
+    else if (r.status === 'AMBIGUOUS' || r.status === 'AMBIGUOUS_REVIEW') { g.ambig_qty++; g.ambig_amt += b.amt_trx; }
+    else { g.unmatch_qty++; g.unmatch_amt += b.amt_trx; }
+  }
+  
+  const sortedKeys = [...groups.keys()].sort();
+  let html = `<div class="table-wrap"><table><thead><tr>
+    <th>Tgl Cair</th><th>Tipe Settlement</th><th>AMT_SETL</th><th>Trx</th>
+    <th>Gross</th><th>MDR</th><th>Net</th>
+    <th>Exact</th><th>Review</th><th>Ambig</th><th>Unmatch</th>
+  </tr></thead><tbody>`;
+  
+  let currentDate = null;
+  let dateGroups = [];
+  const grand = newGrandAcc();
+  
+  function subtotalHtml() {
+    const s = sumGroups(dateGroups);
+    return `<tr class="subtotal">
+      <td>Subtotal ${currentDate}</td><td>${dateGroups.length} settlement(s)</td>
+      <td class="num">${fmt(s.amt_setl)}</td><td class="num">${s.trx_qty}</td>
+      <td class="num">${fmt(s.gross)}</td><td class="num">${fmt(s.mdr)}</td><td class="num">${fmt(s.net)}</td>
+      <td class="num">${s.exact_qty} / ${fmt(s.exact_amt)}</td>
+      <td class="num">${s.review_qty} / ${fmt(s.review_amt)}</td>
+      <td class="num">${s.ambig_qty} / ${fmt(s.ambig_amt)}</td>
+      <td class="num">${s.unmatch_qty} / ${fmt(s.unmatch_amt)}</td>
+    </tr>`;
+  }
+  
+  for (const key of sortedKeys) {
+    const g = groups.get(key);
+    if (currentDate && currentDate !== g.tgl_rk) {
+      html += subtotalHtml(); dateGroups = [];
+    }
+    currentDate = g.tgl_rk;
+    dateGroups.push(g);
+    accGrand(grand, g);
+    
+    html += `<tr>
+      <td>${g.tgl_rk}</td><td>${[...g.tipes].sort().join(' + ')}</td>
+      <td class="num">${fmt(g.amt_setl)}</td><td class="num">${g.trx_qty}</td>
+      <td class="num">${fmt(g.gross)}</td><td class="num">${fmt(g.mdr)}</td><td class="num">${fmt(g.net)}</td>
+      <td class="num">${g.exact_qty} / ${fmt(g.exact_amt)}</td>
+      <td class="num">${g.review_qty} / ${fmt(g.review_amt)}</td>
+      <td class="num">${g.ambig_qty} / ${fmt(g.ambig_amt)}</td>
+      <td class="num">${g.unmatch_qty} / ${fmt(g.unmatch_amt)}</td>
+    </tr>`;
+  }
+  if (dateGroups.length > 0) html += subtotalHtml();
+  
+  // Grand total
+  html += `<tr class="grand">
+    <td>GRAND TOTAL</td><td>${groups.size} settlement(s)</td>
+    <td class="num">${fmt(grand.amt_setl)}</td><td class="num">${grand.trx_qty}</td>
+    <td class="num">${fmt(grand.gross)}</td><td class="num">${fmt(grand.mdr)}</td><td class="num">${fmt(grand.net)}</td>
+    <td class="num">${grand.exact_qty} / ${fmt(grand.exact_amt)}</td>
+    <td class="num">${grand.review_qty} / ${fmt(grand.review_amt)}</td>
+    <td class="num">${grand.ambig_qty} / ${fmt(grand.ambig_amt)}</td>
+    <td class="num">${grand.unmatch_qty} / ${fmt(grand.unmatch_amt)}</td>
+  </tr>`;
+  
+  html += '</tbody></table></div>';
+  document.getElementById('tab-summary').innerHTML = html;
+}
+
+function renderSummaryTabBCA(results, bankSettlements) {
+  // Group: (tgl_cair, kartu) — Credit / Debit / QRIS per tanggal cair
+  // amt_setl untuk tiap group = sum net dari bankSettlements yang match key
+  const setlByKey = new Map();
+  for (const s of bankSettlements) {
+    const key = `${s.tgl_cair}|${s.kartu}`;
+    if (!setlByKey.has(key)) setlByKey.set(key, { net: 0, gross: 0, mdr: 0, count: 0 });
+    const v = setlByKey.get(key);
+    v.net += s.net; v.gross += s.gross; v.mdr += s.mdr; v.count++;
+  }
+  
+  // Group T-transactions per (tgl_cair, kartu) — untuk stats matching
+  const groups = new Map();
+  for (const r of results) {
+    const b = r.bank;
+    const kartu = b.principle || 'Unknown'; // Credit/Debit/QRIS
+    const key = `${b.tgl_rk}|${kartu}`;     // tgl_rk = tgl_cair untuk BCA
+    if (!groups.has(key)) {
+      groups.set(key, {
+        tgl_rk: b.tgl_rk, kartu,
+        amt_setl: 0, trx_qty: 0, gross: 0, mdr: 0, net: 0,
+        exact_qty: 0, exact_amt: 0, review_qty: 0, review_amt: 0,
+        ambig_qty: 0, ambig_amt: 0, unmatch_qty: 0, unmatch_amt: 0,
+      });
+    }
+    const g = groups.get(key);
+    g.trx_qty++; g.gross += b.amt_trx; g.mdr += b.disc_amt; g.net += b.net_amt;
+    if (r.status === 'MATCH_EXACT') { g.exact_qty++; g.exact_amt += b.amt_trx; }
+    else if (r.status === 'MATCH_REVIEW') { g.review_qty++; g.review_amt += b.amt_trx; }
+    else if (r.status === 'AMBIGUOUS' || r.status === 'AMBIGUOUS_REVIEW') { g.ambig_qty++; g.ambig_amt += b.amt_trx; }
+    else { g.unmatch_qty++; g.unmatch_amt += b.amt_trx; }
+  }
+  
+  // Set amt_setl dari settlement data
+  for (const [key, g] of groups.entries()) {
+    const s = setlByKey.get(key);
+    if (s) g.amt_setl = s.net;
+  }
+  
+  const sortedKeys = [...groups.keys()].sort();
+  let html = `<div class="table-wrap"><table><thead><tr>
+    <th>Tgl Cair</th><th>Tipe Kartu</th><th>Net Settlement</th><th>Trx</th>
+    <th>Gross (T)</th><th>MDR</th><th>Net (T)</th>
+    <th>Exact</th><th>Review</th><th>Ambig</th><th>Unmatch</th>
+  </tr></thead><tbody>`;
+  
+  let currentDate = null;
+  let dateGroups = [];
+  const grand = newGrandAcc();
+  
+  function subtotalHtml() {
+    const s = sumGroups(dateGroups);
+    return `<tr class="subtotal">
+      <td>Subtotal ${currentDate}</td><td>${dateGroups.length} tipe</td>
+      <td class="num">${fmt(s.amt_setl)}</td><td class="num">${s.trx_qty}</td>
+      <td class="num">${fmt(s.gross)}</td><td class="num">${fmt(s.mdr)}</td><td class="num">${fmt(s.net)}</td>
+      <td class="num">${s.exact_qty} / ${fmt(s.exact_amt)}</td>
+      <td class="num">${s.review_qty} / ${fmt(s.review_amt)}</td>
+      <td class="num">${s.ambig_qty} / ${fmt(s.ambig_amt)}</td>
+      <td class="num">${s.unmatch_qty} / ${fmt(s.unmatch_amt)}</td>
+    </tr>`;
+  }
+  
+  for (const key of sortedKeys) {
+    const g = groups.get(key);
+    if (currentDate && currentDate !== g.tgl_rk) {
+      html += subtotalHtml(); dateGroups = [];
+    }
+    currentDate = g.tgl_rk;
+    dateGroups.push(g);
+    accGrand(grand, g);
+    
+    html += `<tr>
+      <td>${g.tgl_rk}</td><td>${g.kartu}</td>
+      <td class="num">${fmt(g.amt_setl)}</td><td class="num">${g.trx_qty}</td>
+      <td class="num">${fmt(g.gross)}</td><td class="num">${fmt(g.mdr)}</td><td class="num">${fmt(g.net)}</td>
+      <td class="num">${g.exact_qty} / ${fmt(g.exact_amt)}</td>
+      <td class="num">${g.review_qty} / ${fmt(g.review_amt)}</td>
+      <td class="num">${g.ambig_qty} / ${fmt(g.ambig_amt)}</td>
+      <td class="num">${g.unmatch_qty} / ${fmt(g.unmatch_amt)}</td>
+    </tr>`;
+  }
+  if (dateGroups.length > 0) html += subtotalHtml();
+  
+  html += `<tr class="grand">
+    <td>GRAND TOTAL</td><td>${groups.size} group(s)</td>
+    <td class="num">${fmt(grand.amt_setl)}</td><td class="num">${grand.trx_qty}</td>
+    <td class="num">${fmt(grand.gross)}</td><td class="num">${fmt(grand.mdr)}</td><td class="num">${fmt(grand.net)}</td>
+    <td class="num">${grand.exact_qty} / ${fmt(grand.exact_amt)}</td>
+    <td class="num">${grand.review_qty} / ${fmt(grand.review_amt)}</td>
+    <td class="num">${grand.ambig_qty} / ${fmt(grand.ambig_amt)}</td>
+    <td class="num">${grand.unmatch_qty} / ${fmt(grand.unmatch_amt)}</td>
+  </tr>`;
+  
+  html += '</tbody></table></div>';
+  document.getElementById('tab-summary').innerHTML = html;
+}
+
+function renderSummaryTabBNI(results) {
+  // Group by (tgl_rk = PROC DATE, jenis = KREDIT/DEBIT/QRIS/TAPCASH)
+  // BNI tidak punya AMT_SETL terpisah → hitung sum net per group
+  const groups = new Map();
+  for (const r of results) {
+    const b = r.bank;
+    const jenis = b.tipe || 'UNKNOWN';
+    const key = `${b.tgl_rk}|${jenis}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        tgl_rk: b.tgl_rk, jenis,
+        amt_setl: 0,   // akan diisi dari sum net di bawah
+        trx_qty: 0, gross: 0, mdr: 0, net: 0,
+        exact_qty: 0, exact_amt: 0, review_qty: 0, review_amt: 0,
+        ambig_qty: 0, ambig_amt: 0, unmatch_qty: 0, unmatch_amt: 0,
+      });
+    }
+    const g = groups.get(key);
+    g.trx_qty++; g.gross += b.amt_trx; g.mdr += b.disc_amt; g.net += b.net_amt;
+    if (r.status === 'MATCH_EXACT') { g.exact_qty++; g.exact_amt += b.amt_trx; }
+    else if (r.status === 'MATCH_REVIEW') { g.review_qty++; g.review_amt += b.amt_trx; }
+    else if (r.status === 'AMBIGUOUS' || r.status === 'AMBIGUOUS_REVIEW') { g.ambig_qty++; g.ambig_amt += b.amt_trx; }
+    else { g.unmatch_qty++; g.unmatch_amt += b.amt_trx; }
+  }
+  // Set amt_setl = net total per group (karena BNI tidak punya field AMT_SETL eksplisit)
+  for (const g of groups.values()) g.amt_setl = g.net;
+  
+  const sortedKeys = [...groups.keys()].sort();
+  let html = `<div class="table-wrap"><table><thead><tr>
+    <th>Tgl Cair (PROC DATE)</th><th>Jenis Transaksi</th><th>Net Settlement</th><th>Trx</th>
+    <th>Gross</th><th>MDR</th><th>Net</th>
+    <th>Exact</th><th>Review</th><th>Ambig</th><th>Unmatch</th>
+  </tr></thead><tbody>`;
+  
+  let currentDate = null;
+  let dateGroups = [];
+  const grand = newGrandAcc();
+  
+  function subtotalHtml() {
+    const s = sumGroups(dateGroups);
+    return `<tr class="subtotal">
+      <td>Subtotal ${currentDate}</td><td>${dateGroups.length} jenis</td>
+      <td class="num">${fmt(s.amt_setl)}</td><td class="num">${s.trx_qty}</td>
+      <td class="num">${fmt(s.gross)}</td><td class="num">${fmt(s.mdr)}</td><td class="num">${fmt(s.net)}</td>
+      <td class="num">${s.exact_qty} / ${fmt(s.exact_amt)}</td>
+      <td class="num">${s.review_qty} / ${fmt(s.review_amt)}</td>
+      <td class="num">${s.ambig_qty} / ${fmt(s.ambig_amt)}</td>
+      <td class="num">${s.unmatch_qty} / ${fmt(s.unmatch_amt)}</td>
+    </tr>`;
+  }
+  
+  for (const key of sortedKeys) {
+    const g = groups.get(key);
+    if (currentDate && currentDate !== g.tgl_rk) {
+      html += subtotalHtml(); dateGroups = [];
+    }
+    currentDate = g.tgl_rk;
+    dateGroups.push(g);
+    accGrand(grand, g);
+    
+    html += `<tr>
+      <td>${g.tgl_rk}</td><td>${g.jenis}</td>
+      <td class="num">${fmt(g.amt_setl)}</td><td class="num">${g.trx_qty}</td>
+      <td class="num">${fmt(g.gross)}</td><td class="num">${fmt(g.mdr)}</td><td class="num">${fmt(g.net)}</td>
+      <td class="num">${g.exact_qty} / ${fmt(g.exact_amt)}</td>
+      <td class="num">${g.review_qty} / ${fmt(g.review_amt)}</td>
+      <td class="num">${g.ambig_qty} / ${fmt(g.ambig_amt)}</td>
+      <td class="num">${g.unmatch_qty} / ${fmt(g.unmatch_amt)}</td>
+    </tr>`;
+  }
+  if (dateGroups.length > 0) html += subtotalHtml();
+  
+  html += `<tr class="grand">
+    <td>GRAND TOTAL</td><td>${groups.size} group(s)</td>
+    <td class="num">${fmt(grand.amt_setl)}</td><td class="num">${grand.trx_qty}</td>
+    <td class="num">${fmt(grand.gross)}</td><td class="num">${fmt(grand.mdr)}</td><td class="num">${fmt(grand.net)}</td>
+    <td class="num">${grand.exact_qty} / ${fmt(grand.exact_amt)}</td>
+    <td class="num">${grand.review_qty} / ${fmt(grand.review_amt)}</td>
+    <td class="num">${grand.ambig_qty} / ${fmt(grand.ambig_amt)}</td>
+    <td class="num">${grand.unmatch_qty} / ${fmt(grand.unmatch_amt)}</td>
+  </tr>`;
+  
+  html += '</tbody></table></div>';
+  document.getElementById('tab-summary').innerHTML = html;
+}
+
+// ============================================================
+// MANDIRI Summary Tab
+// ============================================================
+// Grouping:
+//   CC/DEBIT: by (tgl_trx + PAYMENTBATCH)
+//   QR:       by (tgl_trx + Bank Account)
+// Group key disimpan di field `remark_rk` saat parsing
+// (untuk CC = paymentBatch, untuk QR = bankAccount).
+// Net Settlement: kalau ada match dengan summaries, pakai net dari summary;
+// else fallback ke sum net per group.
+function renderSummaryTabMandiri(results, bankSettlements) {
+  // Build summaries lookup: untuk CC pakai (payment_batch), untuk QR pakai (bank_account + payment_date)
+  // Karena summary file Mandiri sudah per-batch & per-paymentdate, ini bisa langsung jadi reference.
+  const setlByBatch = new Map();   // CC: payment_batch -> net
+  const setlByAcctDate = new Map(); // QR: bank_account|payment_date -> net
+  for (const s of bankSettlements) {
+    if (s.file_type === 'CC_DEBIT' && s.payment_batch) {
+      setlByBatch.set(s.payment_batch, (setlByBatch.get(s.payment_batch) || 0) + s.net);
+    } else if (s.file_type === 'QR') {
+      const key = `${s.bank_account || ''}|${s.payment_date || ''}`;
+      setlByAcctDate.set(key, (setlByAcctDate.get(key) || 0) + s.net);
+    }
+  }
+
+  // Group by (tgl_trx, group_key, file_type)
+  //   file_type: 'CC_DEBIT' atau 'QR' — pisah supaya CC dan QR tidak ketuker
+  const groups = new Map();
+  for (const r of results) {
+    const b = r.bank;
+    const ft = b.mandiri_file_type || 'CC_DEBIT';
+    const groupKey = b.remark_rk || '(no-key)';  // payment_batch untuk CC, bank_account untuk QR
+    const key = `${b.tgl_trx}|${ft}|${groupKey}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        ...newGrandAcc(),
+        tgl_trx: b.tgl_trx,
+        tgl_cair: b.tgl_rk,
+        file_type: ft,
+        group_key: groupKey,
+        bank_account: b.bank_account || '',
+        amt_setl: 0,
+      });
+    }
+    const g = groups.get(key);
+    g.trx_qty++; g.gross += b.amt_trx; g.mdr += b.disc_amt; g.net += b.net_amt;
+    if (r.status === 'MATCH_EXACT') { g.exact_qty++; g.exact_amt += b.amt_trx; }
+    else if (r.status === 'MATCH_REVIEW') { g.review_qty++; g.review_amt += b.amt_trx; }
+    else if (r.status === 'AMBIGUOUS' || r.status === 'AMBIGUOUS_REVIEW') { g.ambig_qty++; g.ambig_amt += b.amt_trx; }
+    else { g.unmatch_qty++; g.unmatch_amt += b.amt_trx; }
+  }
+
+  // Set net settlement per group
+  for (const g of groups.values()) {
+    if (g.file_type === 'CC_DEBIT') {
+      g.amt_setl = setlByBatch.get(g.group_key) || g.net;
+    } else {
+      // QR: cocokkan via bank_account + payment_date (tgl_cair = T+1)
+      const lookupKey = `${g.bank_account}|${g.tgl_cair}`;
+      g.amt_setl = setlByAcctDate.get(lookupKey) || g.net;
+    }
+  }
+
+  // Sort: by tgl_trx, lalu file_type (CC dulu, baru QR), lalu group_key
+  const sortedKeys = [...groups.keys()].sort((a, b) => {
+    const ga = groups.get(a), gb = groups.get(b);
+    let cmp = ga.tgl_trx.localeCompare(gb.tgl_trx);
+    if (cmp !== 0) return cmp;
+    cmp = ga.file_type.localeCompare(gb.file_type);
+    if (cmp !== 0) return cmp;
+    return ga.group_key.localeCompare(gb.group_key);
+  });
+
+  let html = `<div class="table-wrap"><table><thead><tr>
+    <th>Tgl Trx</th><th>Tgl Cair</th><th>Tipe File</th><th>Group Key</th>
+    <th>Net Settlement</th><th>Trx</th>
+    <th>Gross</th><th>MDR</th><th>Net</th>
+    <th>Exact</th><th>Review</th><th>Ambig</th><th>Unmatch</th>
+  </tr></thead><tbody>`;
+
+  let currentDate = null;
+  let dateGroups = [];
+  const grand = newGrandAcc();
+
+  function subtotalHtml() {
+    const s = sumGroups(dateGroups);
+    return `<tr class="subtotal">
+      <td colspan="4">Subtotal ${currentDate} (${dateGroups.length} group)</td>
+      <td class="num">${fmt(s.amt_setl)}</td><td class="num">${s.trx_qty}</td>
+      <td class="num">${fmt(s.gross)}</td><td class="num">${fmt(s.mdr)}</td><td class="num">${fmt(s.net)}</td>
+      <td class="num">${s.exact_qty} / ${fmt(s.exact_amt)}</td>
+      <td class="num">${s.review_qty} / ${fmt(s.review_amt)}</td>
+      <td class="num">${s.ambig_qty} / ${fmt(s.ambig_amt)}</td>
+      <td class="num">${s.unmatch_qty} / ${fmt(s.unmatch_amt)}</td>
+    </tr>`;
+  }
+
+  for (const key of sortedKeys) {
+    const g = groups.get(key);
+    if (currentDate && currentDate !== g.tgl_trx) {
+      html += subtotalHtml(); dateGroups = [];
+    }
+    currentDate = g.tgl_trx;
+    dateGroups.push(g);
+    accGrand(grand, g);
+
+    // Group key display: untuk CC tampilkan payment batch, untuk QR tampilkan bank account
+    const keyLabel = g.file_type === 'CC_DEBIT'
+      ? `Batch ${g.group_key}`
+      : `Acct ${g.bank_account}`;
+    const ftLabel = g.file_type === 'CC_DEBIT' ? 'CC/DEBIT' : 'QR';
+
+    html += `<tr>
+      <td>${g.tgl_trx}</td><td>${g.tgl_cair}</td>
+      <td>${ftLabel}</td><td>${keyLabel}</td>
+      <td class="num">${fmt(g.amt_setl)}</td><td class="num">${g.trx_qty}</td>
+      <td class="num">${fmt(g.gross)}</td><td class="num">${fmt(g.mdr)}</td><td class="num">${fmt(g.net)}</td>
+      <td class="num">${g.exact_qty} / ${fmt(g.exact_amt)}</td>
+      <td class="num">${g.review_qty} / ${fmt(g.review_amt)}</td>
+      <td class="num">${g.ambig_qty} / ${fmt(g.ambig_amt)}</td>
+      <td class="num">${g.unmatch_qty} / ${fmt(g.unmatch_amt)}</td>
+    </tr>`;
+  }
+  if (dateGroups.length > 0) html += subtotalHtml();
+
+  html += `<tr class="grand">
+    <td colspan="4">GRAND TOTAL (${groups.size} group)</td>
+    <td class="num">${fmt(grand.amt_setl)}</td><td class="num">${grand.trx_qty}</td>
+    <td class="num">${fmt(grand.gross)}</td><td class="num">${fmt(grand.mdr)}</td><td class="num">${fmt(grand.net)}</td>
+    <td class="num">${grand.exact_qty} / ${fmt(grand.exact_amt)}</td>
+    <td class="num">${grand.review_qty} / ${fmt(grand.review_amt)}</td>
+    <td class="num">${grand.ambig_qty} / ${fmt(grand.ambig_amt)}</td>
+    <td class="num">${grand.unmatch_qty} / ${fmt(grand.unmatch_amt)}</td>
+  </tr>`;
+
+  html += '</tbody></table></div>';
+  document.getElementById('tab-summary').innerHTML = html;
+}
+
+// Helper untuk grand total accumulator
+function newGrandAcc() {
+  return { amt_setl: 0, trx_qty: 0, gross: 0, mdr: 0, net: 0,
+    exact_qty: 0, exact_amt: 0, review_qty: 0, review_amt: 0,
+    ambig_qty: 0, ambig_amt: 0, unmatch_qty: 0, unmatch_amt: 0 };
+}
+function accGrand(grand, g) {
+  ['amt_setl', 'trx_qty', 'gross', 'mdr', 'net', 'exact_qty', 'exact_amt',
+   'review_qty', 'review_amt', 'ambig_qty', 'ambig_amt', 'unmatch_qty', 'unmatch_amt']
+   .forEach(k => grand[k] += g[k]);
+}
+function sumGroups(groups) {
+  const s = newGrandAcc();
+  for (const g of groups) accGrand(s, g);
+  return s;
+}
+
+// ============================================================
+// ALL TRANSACTIONS TAB (Match + Unmatch Bank + Ambig)
+// ============================================================
+// ============================================================
+// CLICK-TO-SORT helper (dipakai All Transactions & Unmatch POS)
+// ============================================================
+// State per-tab: { col: number, dir: 'asc' | 'desc' | null }
+// null = pakai default sort. Klik header: null → asc → desc → null (cycle).
+const __sortState = {
+  allTrx: { col: null, dir: null },
+  unmatchPos: { col: null, dir: null },
+};
+
+// Build cycle next state untuk 1 kolom
+function nextSortState(current, col) {
+  if (current.col !== col) return { col, dir: 'asc' };
+  if (current.dir === 'asc') return { col, dir: 'desc' };
+  return { col: null, dir: null };  // dari desc → reset ke default
+}
+
+// Render indicator panah di header
+function sortArrow(state, col) {
+  if (state.col !== col) return '<span class="sort-arrow">⇅</span>';
+  if (state.dir === 'asc')  return '<span class="sort-arrow active">▲</span>';
+  if (state.dir === 'desc') return '<span class="sort-arrow active">▼</span>';
+  return '<span class="sort-arrow">⇅</span>';
+}
+
+// Generic comparator: ambil value pakai accessor function, compare numeric atau string
+function makeComparator(accessor, dir) {
+  return (a, b) => {
+    const va = accessor(a);
+    const vb = accessor(b);
+    // Null/undefined go to bottom
+    const aEmpty = (va == null || va === '');
+    const bEmpty = (vb == null || vb === '');
+    if (aEmpty && bEmpty) return 0;
+    if (aEmpty) return 1;   // null selalu di bawah
+    if (bEmpty) return -1;
+    let cmp;
+    if (typeof va === 'number' && typeof vb === 'number') cmp = va - vb;
+    else cmp = String(va).localeCompare(String(vb), undefined, { numeric: true });
+    return dir === 'desc' ? -cmp : cmp;
+  };
+}
+
+// Trigger re-render tab (dipanggil dari onclick handler header)
+function setSortAndRender(tabName, col) {
+  const state = __sortState[tabName];
+  const newState = nextSortState(state, col);
+  __sortState[tabName].col = newState.col;
+  __sortState[tabName].dir = newState.dir;
+  if (tabName === 'allTrx') {
+    renderAllTrxTab(lastResults, lastBankCode);
+  } else if (tabName === 'unmatchPos') {
+    const ambigList = lastResults.filter(r => r.status === 'AMBIGUOUS' || r.status === 'AMBIGUOUS_REVIEW');
+    renderUnmatchPosTabV2(lastUnmatchPos, ambigList, lastBankCode);
+  }
+}
+
+function renderAllTrxTab(results, bankCode) {
+  // ============================================================
+  // KOLOM SCHEMA per bank
+  // ============================================================
+  // Struktur: setiap kolom punya { key, label, accessor, sortable, numeric }
+  // - key:      ID unik (untuk click handler)
+  // - label:    Header text
+  // - accessor: function(r) → nilai untuk render & sort
+  // - sortable: true = bisa di-klik untuk sort
+  // - numeric:  true = format pakai fmt(), align right
+  // - section:  'status' | 'pos' | 'bank' | 'notes'
+  //
+  // Tambah bank baru = bikin schema kolom di sini.
+
+  const COLS_STATUS = [
+    { key: 'status', label: 'Status', section: 'status', sortable: true,
+      accessor: r => statusOrder(r.status) }, // numeric untuk sort
+  ];
+
+  const COLS_POS = [
+    { key: 'pos_date', label: 'Tgl POS', section: 'pos', sortable: true,
+      accessor: r => r.pos ? r.pos.pos_date : null },
+    { key: 'bill_no', label: 'Bill No', section: 'pos', sortable: true, numeric: true,
+      accessor: r => r.pos ? parseInt(r.pos.bill_no) || 0 : null },
+    { key: 'pay_type', label: 'Art Desc', section: 'pos', sortable: true,
+      accessor: r => r.pos ? r.pos.payment_type : null },
+    { key: 'ref_short', label: 'Internal Ref', section: 'pos', sortable: false,
+      accessor: r => r.pos ? r.pos.ref_short : null },
+    { key: 'pos_amt', label: 'Amount POS', section: 'pos', sortable: true, numeric: true, isAmount: true,
+      accessor: r => r.pos ? r.pos.amount : null },
+  ];
+
+  let COLS_BANK;
+  if (bankCode === 'BRI') {
+    COLS_BANK = [
+      { key: 'b_tgl_trx', label: 'Tgl Trx', sortable: true, accessor: r => r.bank.tgl_trx },
+      { key: 'b_tgl_rk',  label: 'Tgl Cair', sortable: true, accessor: r => r.bank.tgl_rk },
+      { key: 'b_remark',  label: 'Settlement Batch', sortable: false, accessor: r => r.bank.remark_rk },
+      { key: 'b_tipe',    label: 'Tipe', sortable: true, accessor: r => r.bank.tipe || '' },
+      { key: 'b_aprv',    label: 'Approval', sortable: false, accessor: r => r.bank.aprv || '' },
+      { key: 'b_card',    label: 'Card Number', sortable: false, accessor: r => r.bank.card || '' },
+      { key: 'b_princ',   label: 'Issuer', sortable: false, accessor: r => r.bank.principle || '' },
+      { key: 'b_gross',   label: 'Gross', sortable: true, numeric: true, isAmount: true, accessor: r => r.bank.amt_trx },
+      { key: 'b_mdr',     label: 'MDR', sortable: true, numeric: true, isAmount: true, accessor: r => r.bank.disc_amt },
+      { key: 'b_net',     label: 'Net', sortable: true, numeric: true, isAmount: true, accessor: r => r.bank.net_amt },
+    ];
+  } else if (bankCode === 'BNI') {
+    COLS_BANK = [
+      { key: 'b_tgl_trx', label: 'Tgl Trx', sortable: true, accessor: r => r.bank.tgl_trx },
+      { key: 'b_tgl_rk',  label: 'Tgl Cair', sortable: true, accessor: r => r.bank.tgl_rk },
+      { key: 'b_jenis',   label: 'Jenis', sortable: true, accessor: r => r.bank.tipe || '' },
+      { key: 'b_princ',   label: 'Principle', sortable: true, accessor: r => r.bank.principle || '' },
+      { key: 'b_aprv',    label: 'Approval', sortable: false, accessor: r => r.bank.aprv || '' },
+      { key: 'b_card',    label: 'Card Number', sortable: false, accessor: r => r.bank.card || '' },
+      { key: 'b_issuer',  label: 'Issuer', sortable: true, accessor: r => r.bank.issuer || '' },
+      { key: 'b_gross',   label: 'Gross', sortable: true, numeric: true, isAmount: true, accessor: r => r.bank.amt_trx },
+      { key: 'b_mdr',     label: 'MDR', sortable: true, numeric: true, isAmount: true, accessor: r => r.bank.disc_amt },
+      { key: 'b_net',     label: 'Net', sortable: true, numeric: true, isAmount: true, accessor: r => r.bank.net_amt },
+    ];
+  } else if (bankCode === 'MANDIRI') {
+    COLS_BANK = [
+      { key: 'b_tgl_trx', label: 'Tgl Trx', sortable: true, accessor: r => r.bank.tgl_trx },
+      { key: 'b_tgl_rk',  label: 'Tgl Cair', sortable: true, accessor: r => r.bank.tgl_rk },
+      { key: 'b_ftype',   label: 'Tipe File', sortable: true, accessor: r => r.bank.mandiri_file_type || '' },
+      { key: 'b_jenis',   label: 'Jenis', sortable: true, accessor: r => r.bank.tipe || '' },
+      { key: 'b_princ',   label: 'Principle', sortable: true, accessor: r => r.bank.principle || '' },
+      { key: 'b_card',    label: 'Card', sortable: false, accessor: r => r.bank.card || '' },
+      { key: 'b_aprv',    label: 'Auth/Ref', sortable: false, accessor: r => r.bank.aprv || '' },
+      { key: 'b_batch',   label: 'Pay Batch / Acct', sortable: true, accessor: r => r.bank.remark_rk || '' },
+      { key: 'b_gross',   label: 'Gross', sortable: true, numeric: true, isAmount: true, accessor: r => r.bank.amt_trx },
+      { key: 'b_mdr',     label: 'MDR', sortable: true, numeric: true, isAmount: true, accessor: r => r.bank.disc_amt },
+      { key: 'b_net',     label: 'Net', sortable: true, numeric: true, isAmount: true, accessor: r => r.bank.net_amt },
+    ];
+  } else { // BCA
+    COLS_BANK = [
+      { key: 'b_tgl_trx', label: 'Tgl Trx', sortable: true, accessor: r => r.bank.tgl_trx },
+      { key: 'b_tgl_rk',  label: 'Tgl Cair', sortable: true, accessor: r => r.bank.tgl_rk },
+      { key: 'b_tipe',    label: 'Tipe', sortable: true, accessor: r => r.bank.tipe_full || r.bank.tipe || '' },
+      { key: 'b_aprv',    label: 'Approval', sortable: false, accessor: r => r.bank.aprv || '' },
+      { key: 'b_card',    label: 'Card Number', sortable: false, accessor: r => r.bank.card || '' },
+      { key: 'b_kartu',   label: 'Kartu', sortable: true, accessor: r => r.bank.principle || '' },
+      { key: 'b_gross',   label: 'Gross', sortable: true, numeric: true, isAmount: true, accessor: r => r.bank.amt_trx },
+      { key: 'b_mdr',     label: 'MDR', sortable: true, numeric: true, isAmount: true, accessor: r => r.bank.disc_amt },
+      { key: 'b_net',     label: 'Net', sortable: true, numeric: true, isAmount: true, accessor: r => r.bank.net_amt },
+    ];
+  }
+
+  const COLS_NOTES = [
+    { key: 'notes', label: 'Notes', section: 'notes', sortable: false,
+      accessor: r => buildNotesFor(r, bankCode) },
+  ];
+
+  const allCols = [...COLS_STATUS, ...COLS_POS, ...COLS_BANK, ...COLS_NOTES];
+
+  // ============================================================
+  // SORT: default = Opsi C (Bill No asc untuk yang ada POS, unmatch di bawah by tgl_trx)
+  // Override kalau user klik header.
+  // ============================================================
+  const sortState = __sortState.allTrx;
+  let sorted;
+  if (sortState.col === null) {
+    // DEFAULT SORT: yang ada POS di atas (asc by bill_no), yang tanpa POS di bawah (asc by tgl_trx)
+    sorted = [...results].sort((a, b) => {
+      const aHasPos = !!a.pos;
+      const bHasPos = !!b.pos;
+      if (aHasPos && !bHasPos) return -1;
+      if (!aHasPos && bHasPos) return 1;
+      if (aHasPos && bHasPos) {
+        // Both have POS: sort by bill_no numeric asc
+        const ba = parseInt(a.pos.bill_no) || 0;
+        const bb = parseInt(b.pos.bill_no) || 0;
+        if (ba !== bb) return ba - bb;
+        // Tie-break by status priority
+        return statusOrder(a.status) - statusOrder(b.status);
+      }
+      // Both no POS: sort by tgl_trx asc
+      const cmp = (a.bank.tgl_trx || '').localeCompare(b.bank.tgl_trx || '');
+      if (cmp !== 0) return cmp;
+      return statusOrder(a.status) - statusOrder(b.status);
+    });
+  } else {
+    // USER-DEFINED SORT
+    const col = allCols.find(c => c.key === sortState.col);
+    if (col) {
+      sorted = [...results].sort(makeComparator(col.accessor, sortState.dir));
+    } else {
+      sorted = [...results];
+    }
+  }
+
+  // ============================================================
+  // RENDER HEADER
+  // ============================================================
+  // Section header (row 1): Status | POS (Sistem) | Bank (XXX) | Notes
+  // Detail header (row 2): kolom-kolom detail per section
+  const posColCount = COLS_POS.length;
+  const bankColCount = COLS_BANK.length;
+
+  let html = `<div class="table-wrap"><table><thead>
+    <tr>
+      <th rowspan="2" class="sortable" onclick="setSortAndRender('allTrx', '${COLS_STATUS[0].key}')">
+        ${COLS_STATUS[0].label} ${sortArrow(sortState, COLS_STATUS[0].key)}
+      </th>
+      <th colspan="${posColCount}" class="section">POS (Sistem)</th>
+      <th colspan="${bankColCount}" class="section">Bank (${bankCode})</th>
+      <th rowspan="2">Notes</th>
+    </tr>
+    <tr>`;
+
+  // POS detail headers
+  for (const c of COLS_POS) {
+    if (c.sortable) {
+      html += `<th class="sortable" onclick="setSortAndRender('allTrx', '${c.key}')">${c.label} ${sortArrow(sortState, c.key)}</th>`;
+    } else {
+      html += `<th>${c.label}</th>`;
+    }
+  }
+  // Bank detail headers
+  for (const c of COLS_BANK) {
+    if (c.sortable) {
+      html += `<th class="sortable" onclick="setSortAndRender('allTrx', '${c.key}')">${c.label} ${sortArrow(sortState, c.key)}</th>`;
+    } else {
+      html += `<th>${c.label}</th>`;
+    }
+  }
+  html += `</tr></thead><tbody>`;
+
+  // ============================================================
+  // RENDER ROWS
+  // ============================================================
+  for (const r of sorted) {
+    const b = r.bank;
+    const p = r.pos;
+    let statusLabel = 'UNMATCH', badge = 'unmatch', cls = 'unmatch';
+    if (r.status === 'MATCH_EXACT')           { statusLabel = 'EXACT';     badge = 'exact';  cls = 'exact'; }
+    else if (r.status === 'MATCH_REVIEW')     { statusLabel = 'REVIEW';    badge = 'review'; cls = 'review'; }
+    else if (r.status === 'AMBIGUOUS')        { statusLabel = 'AMBIG';     badge = 'ambig';  cls = 'ambig'; }
+    else if (r.status === 'AMBIGUOUS_REVIEW') { statusLabel = 'AMBIG-REV'; badge = 'ambig';  cls = 'ambig'; }
+
+    // Build POS cells
+    let posCells = '';
+    if (p) {
+      for (const c of COLS_POS) {
+        const val = c.accessor(r);
+        if (c.isAmount) posCells += `<td class="num">${fmt(val)}</td>`;
+        else            posCells += `<td>${val == null ? '' : val}</td>`;
+      }
+    } else {
+      posCells = `<td colspan="${posColCount}" class="muted">— tidak ada match POS —</td>`;
+    }
+
+    // Build Bank cells
+    let bankCells = '';
+    for (const c of COLS_BANK) {
+      const val = c.accessor(r);
+      if (c.isAmount) bankCells += `<td class="num">${fmt(val)}</td>`;
+      else            bankCells += `<td>${val == null ? '' : val}</td>`;
+    }
+
+    const notes = buildNotesFor(r, bankCode);
+    html += `<tr class="${cls}">
+      <td><span class="badge ${badge}">${statusLabel}</span></td>
+      ${posCells}
+      ${bankCells}
+      <td class="note">${notes}</td>
+    </tr>`;
+  }
+  html += '</tbody></table></div>';
+
+  if (sorted.length === 0) html = '<div class="empty">Tidak ada transaksi bank.</div>';
+  document.getElementById('tab-allTrx').innerHTML = html;
+}
+
+// Helper: status priority order untuk sorting & tie-breaking
+function statusOrder(status) {
+  const order = { 'MATCH_EXACT': 1, 'MATCH_REVIEW': 2, 'AMBIGUOUS': 3, 'AMBIGUOUS_REVIEW': 4, 'UNMATCH_BANK': 5 };
+  return order[status] || 9;
+}
+
+// Helper: build notes string untuk 1 row (sebelumnya inline)
+function buildNotesFor(r, bankCode) {
+  const notes = [];
+  const p = r.pos;
+  if (r.status === 'MATCH_REVIEW' && p) {
+    // v8: bedakan 2 jenis mismatch
+    //  (a) cross-bank: label POS punya bank lain (mis: "BCA VISA" tapi ketemu di file MANDIRI)
+    //  (b) sub-label sama-bank: label POS bank-nya benar, tapi sub-jenis kartu beda
+    //      (mis: POS "MANDIRI VISA" tapi bank tipe DEBIT)
+    const posDesc = (p.payment_type || '').toUpperCase();
+    const cfg = BANK_REGISTRY[bankCode] || {};
+    const posKeywords = cfg.pos_keywords || [];
+    // Cek: apakah POS desc mengandung salah satu pos_keyword bank ini?
+    // Kalau ya → bank-nya udah benar, mismatch-nya di sub-label.
+    const posIsForThisBank = posKeywords.some(kw => posDesc.includes(kw.toUpperCase()));
+
+    if (posIsForThisBank) {
+      // Sub-label sama-bank — jenis kartu beda
+      const bankJenis = (r.bank.kartu_jenis || r.bank.bni_jenis || r.bank.tipe || '').toUpperCase();
+      notes.push(`⚠ Sub-jenis kartu beda: POS "${p.payment_type}" → bank jenis ${bankJenis}`);
+    } else {
+      // Cross-bank — bank di label POS berbeda dari bank yang sedang direkon
+      notes.push(`⚠ Bank di label POS beda: "${p.payment_type}" → ketemu di file ${bankCode}`);
+    }
+  }
+  if (r.status === 'AMBIGUOUS' || r.status === 'AMBIGUOUS_REVIEW') {
+    const candStr = (r.candidates || []).map(c => `Bill #${c.bill_no} ${c.payment_type} (${c.pos_date})`).join(' | ');
+    notes.push(`Multi candidates: ${candStr}`);
+  }
+  if (r.status === 'UNMATCH_BANK') {
+    notes.push('Tidak ada kandidat POS — cek outlet lain atau missing entry');
+  }
+  if (r.other_candidates && r.other_candidates.length > 0) {
+    notes.push(`ℹ Amount sama label berbeda: ${r.other_candidates.map(c => `Bill #${c.bill_no}`).join(', ')}`);
+  }
+  return notes.join(' | ');
+}
+
+// ============================================================
+// UNMATCH POS TAB
+// ============================================================
+function renderUnmatchPosTabV2(unmatchPos, ambigList, bankCode) {
+  // Build cross-ref map: POS yang muncul di ambig
+  const posInAmbig = new Map();
+  for (const r of ambigList) {
+    for (const c of (r.candidates || [])) {
+      const key = `${c.pos_date}|${c.bill_no}|${c.internal_ref}`;
+      posInAmbig.set(key, { aprv: r.bank.aprv, tgl: r.bank.tgl_trx, status: r.status });
+    }
+  }
+
+  // Schema kolom (untuk click-to-sort)
+  const cols = [
+    { key: 'status', label: 'Status', sortable: false },
+    { key: 'pos_date', label: 'Tgl POS', sortable: true, accessor: p => p.pos_date },
+    { key: 'bill_no', label: 'Bill No', sortable: true, numeric: true, accessor: p => parseInt(p.bill_no) || 0 },
+    { key: 'pay_type', label: 'Art Desc', sortable: true, accessor: p => p.payment_type },
+    { key: 'ref', label: 'Internal Ref', sortable: false },
+    { key: 'amount', label: 'Amount', sortable: true, isAmount: true, accessor: p => p.amount },
+    { key: 'bank', label: 'Bank Suspect', sortable: false },
+    { key: 'cause', label: 'Possible Cause', sortable: false },
+    { key: 'crossref', label: 'Cross-Ref', sortable: false },
+  ];
+
+  // Default sort = by pos_date asc, then bill_no asc.
+  // User klik header = override.
+  const sortState = __sortState.unmatchPos;
+  let sorted;
+  if (sortState.col === null) {
+    sorted = [...unmatchPos].sort((a, b) => {
+      const cmp = (a.pos_date || '').localeCompare(b.pos_date || '');
+      if (cmp !== 0) return cmp;
+      return (parseInt(a.bill_no) || 0) - (parseInt(b.bill_no) || 0);
+    });
+  } else {
+    const col = cols.find(c => c.key === sortState.col);
+    if (col && col.accessor) {
+      sorted = [...unmatchPos].sort(makeComparator(col.accessor, sortState.dir));
+    } else {
+      sorted = [...unmatchPos];
+    }
+  }
+
+  // Build header
+  let html = `<div class="table-wrap"><table><thead><tr>`;
+  for (const c of cols) {
+    if (c.sortable) {
+      html += `<th class="sortable" onclick="setSortAndRender('unmatchPos', '${c.key}')">${c.label} ${sortArrow(sortState, c.key)}</th>`;
+    } else {
+      html += `<th>${c.label}</th>`;
+    }
+  }
+  html += `</tr></thead><tbody>`;
+
+  for (const p of sorted) {
+    const key = `${p.pos_date}|${p.bill_no}|${p.internal_ref}`;
+    let cause, crossRef;
+    if (posInAmbig.has(key)) {
+      const ref = posInAmbig.get(key);
+      cause = `Bagian dari case ambiguous — kandidat di sheet All Transactions`;
+      crossRef = `Aprv ${ref.aprv} (${ref.tgl})`;
+    } else if (p.amount < 5000) {
+      cause = 'Amount sangat kecil — kemungkinan refund/test/pembulatan';
+      crossRef = '-';
+    } else {
+      cause = 'Tidak ada di laporan bank — tunggu file bank berikutnya atau cek manual';
+      crossRef = '-';
+    }
+
+    html += `<tr class="unmatch">
+      <td><span class="badge unmatch">UNMATCH POS</span></td>
+      <td>${p.pos_date}</td><td>${p.bill_no}</td><td>${p.payment_type}</td>
+      <td>${p.ref_short}</td><td class="num">${fmt(p.amount)}</td>
+      <td>${bankCode}</td>
+      <td class="note">${cause}</td><td class="note">${crossRef}</td>
+    </tr>`;
+  }
+  html += '</tbody></table></div>';
+  if (sorted.length === 0) html = '<div class="empty">Semua POS ter-match. ✓</div>';
+  document.getElementById('tab-unmatchPos').innerHTML = html;
+}
+
+// ============================================================
+// TABS
+// ============================================================
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// ============================================================
+// EXCEL EXPORT — Style constants
+// ============================================================
+const COLOR_HEADER = '1F4E78';
+const COLOR_HEADER_POS = '4472C4';
+const COLOR_HEADER_BANK = '5B9BD5';
+const COLOR_SUBGRUP = 'FFF2CC';
+const COLOR_EXACT = 'C6EFCE';
+const COLOR_REVIEW = 'FFEB9C';
+const COLOR_UNMATCH = 'FFC7CE';
+const COLOR_AMBIG = 'D9D2E9';
+const COLOR_TOTAL = '2E75B6';
+const ACCOUNTING_FMT = '_-* #,##0_-;-* #,##0_-;_-* "-"_-;_-@_-';
+
+function styleHeader(cell, fillColor) {
+  cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + fillColor } };
+  cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  cell.border = {
+    top: { style: 'thin', color: { argb: 'FF999999' } },
+    bottom: { style: 'thin', color: { argb: 'FF999999' } },
+    left: { style: 'thin', color: { argb: 'FF999999' } },
+    right: { style: 'thin', color: { argb: 'FF999999' } },
+  };
+}
+
+function styleDataCell(cell, opts = {}) {
+  cell.font = { name: 'Arial', size: 9, ...(opts.font || {}) };
+  cell.border = {
+    top: { style: 'thin', color: { argb: 'FF999999' } },
+    bottom: { style: 'thin', color: { argb: 'FF999999' } },
+    left: { style: 'thin', color: { argb: 'FF999999' } },
+    right: { style: 'thin', color: { argb: 'FF999999' } },
+  };
+  if (opts.fill) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + opts.fill } };
+  if (opts.align) cell.alignment = { horizontal: opts.align, vertical: 'middle', wrapText: opts.wrap || false };
+  else cell.alignment = { vertical: 'middle', wrapText: opts.wrap || false };
+  if (opts.numFmt) cell.numFmt = opts.numFmt;
+}
+
+// ============================================================
+// DOWNLOAD EXCEL — 3 sheet format
+// ============================================================
+async function downloadExcel() {
+  if (!lastResults) return;
+  log('Membuat Excel report...', 'info');
+  
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'CC Recon Tool';
+  wb.created = new Date();
+  
+  const bankCode = lastBankCode;
+  const outletName = OUTLET_REGISTRY[lastOutletCode] ? OUTLET_REGISTRY[lastOutletCode].display_name : lastOutletCode;
+  
+  buildSummarySheetV2(wb, lastResults, bankCode, lastBankSettlements, outletName);
+  buildAllTrxSheet(wb, lastResults, bankCode, outletName);
+  buildUnmatchPosSheetV2(wb, lastResults, lastUnmatchPos, bankCode, outletName);
+  
+  // Filename
+  let firstDate = 'unknown', lastDate = 'unknown';
+  if (bankCode === 'BRI') {
+    const dates = [...new Set(lastResults.map(r => r.bank.tgl_rk))].sort();
+    firstDate = dates[0] || 'unknown';
+    lastDate = dates[dates.length - 1] || 'unknown';
+  } else {
+    const dates = [...new Set(lastResults.map(r => r.bank.tgl_trx))].sort();
+    firstDate = dates[0] || 'unknown';
+    lastDate = dates[dates.length - 1] || 'unknown';
+  }
+  const outletShort = lastOutletCode;
+  const filename = `CC_Recon_${outletShort}_${bankCode}_${firstDate}_to_${lastDate}.xlsx`;
+  
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  saveAs(blob, filename);
+  log(`✓ ${filename} berhasil di-download`, 'info');
+}
+
+// ============================================================
+// SHEET 1: SUMMARY
+// ============================================================
+function buildSummarySheetV2(wb, results, bankCode, bankSettlements, outletName) {
+  // MANDIRI punya struktur summary berbeda (13 kolom: tgl_trx + tgl_cair + tipe file + key + 9 lain)
+  // jadi dispatch ke fungsi khusus.
+  if (bankCode === 'MANDIRI') {
+    return buildSummarySheetMandiri(wb, results, bankSettlements, outletName);
+  }
+
+  const ws = wb.addWorksheet('Summary');
+  ws.getCell('A1').value = `CC/QRIS Payment Reconciliation Summary - ${bankCode}`;
+  ws.getCell('A1').font = { name: 'Arial', size: 12, bold: true };
+  ws.mergeCells('A1:K1');
+  ws.getCell('A2').value = `Outlet: ${outletName.toUpperCase()} | Bank: ${bankCode}`;
+  ws.getCell('A2').font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF666666' } };
+  ws.mergeCells('A2:K2');
+  
+  // Header row
+  let headers;
+  if (bankCode === 'BRI') {
+    headers = ['Tgl Cair', 'Tipe Settlement', 'AMT_SETL', 'Trx', 'Gross', 'MDR', 'Net', 'Exact Qty / Amt', 'Review Qty / Amt', 'Ambig Qty / Amt', 'Unmatch Qty / Amt'];
+  } else if (bankCode === 'BNI') {
+    headers = ['Tgl Cair (PROC DATE)', 'Jenis Transaksi', 'Net Settlement', 'Trx', 'Gross', 'MDR', 'Net', 'Exact Qty / Amt', 'Review Qty / Amt', 'Ambig Qty / Amt', 'Unmatch Qty / Amt'];
+  } else {
+    headers = ['Tgl Cair', 'Tipe Kartu', 'Net Settlement', 'Trx', 'Gross (T)', 'MDR', 'Net (T)', 'Exact Qty / Amt', 'Review Qty / Amt', 'Ambig Qty / Amt', 'Unmatch Qty / Amt'];
+  }
+  headers.forEach((h, i) => {
+    const cell = ws.getCell(4, i + 1);
+    cell.value = h;
+    styleHeader(cell, COLOR_HEADER);
+  });
+  ws.getRow(4).height = 30;
+  
+  // Build groups (same logic as render)
+  const groups = new Map();
+  
+  if (bankCode === 'BRI') {
+    for (const r of results) {
+      const b = r.bank;
+      const key = `${b.tgl_rk}|${b.remark_rk}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          ...newGrandAcc(),
+          tgl_rk: b.tgl_rk, remark_rk: b.remark_rk, amt_setl: b.amt_setl,
+          tipes: new Set(),
+        });
+      }
+      const g = groups.get(key);
+      g.tipes.add(b.tipe);
+      g.trx_qty++; g.gross += b.amt_trx; g.mdr += b.disc_amt; g.net += b.net_amt;
+      if (r.status === 'MATCH_EXACT') { g.exact_qty++; g.exact_amt += b.amt_trx; }
+      else if (r.status === 'MATCH_REVIEW') { g.review_qty++; g.review_amt += b.amt_trx; }
+      else if (r.status === 'AMBIGUOUS' || r.status === 'AMBIGUOUS_REVIEW') { g.ambig_qty++; g.ambig_amt += b.amt_trx; }
+      else { g.unmatch_qty++; g.unmatch_amt += b.amt_trx; }
+    }
+  } else if (bankCode === 'BNI') {
+    // BNI: group by (PROC DATE, JENIS TRX) — net settlement dihitung dari sum net
+    for (const r of results) {
+      const b = r.bank;
+      const jenis = b.tipe || 'UNKNOWN';
+      const key = `${b.tgl_rk}|${jenis}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          ...newGrandAcc(),
+          tgl_rk: b.tgl_rk, jenis, amt_setl: 0,
+        });
+      }
+      const g = groups.get(key);
+      g.trx_qty++; g.gross += b.amt_trx; g.mdr += b.disc_amt; g.net += b.net_amt;
+      if (r.status === 'MATCH_EXACT') { g.exact_qty++; g.exact_amt += b.amt_trx; }
+      else if (r.status === 'MATCH_REVIEW') { g.review_qty++; g.review_amt += b.amt_trx; }
+      else if (r.status === 'AMBIGUOUS' || r.status === 'AMBIGUOUS_REVIEW') { g.ambig_qty++; g.ambig_amt += b.amt_trx; }
+      else { g.unmatch_qty++; g.unmatch_amt += b.amt_trx; }
+    }
+    // Set amt_setl = net total per group
+    for (const g of groups.values()) g.amt_setl = g.net;
+  } else { // BCA
+    const setlByKey = new Map();
+    for (const s of bankSettlements) {
+      const key = `${s.tgl_cair}|${s.kartu}`;
+      if (!setlByKey.has(key)) setlByKey.set(key, 0);
+      setlByKey.set(key, setlByKey.get(key) + s.net);
+    }
+    for (const r of results) {
+      const b = r.bank;
+      const kartu = b.principle || 'Unknown';
+      const key = `${b.tgl_rk}|${kartu}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          ...newGrandAcc(),
+          tgl_rk: b.tgl_rk, kartu, amt_setl: setlByKey.get(key) || 0,
+        });
+      }
+      const g = groups.get(key);
+      g.trx_qty++; g.gross += b.amt_trx; g.mdr += b.disc_amt; g.net += b.net_amt;
+      if (r.status === 'MATCH_EXACT') { g.exact_qty++; g.exact_amt += b.amt_trx; }
+      else if (r.status === 'MATCH_REVIEW') { g.review_qty++; g.review_amt += b.amt_trx; }
+      else if (r.status === 'AMBIGUOUS' || r.status === 'AMBIGUOUS_REVIEW') { g.ambig_qty++; g.ambig_amt += b.amt_trx; }
+      else { g.unmatch_qty++; g.unmatch_amt += b.amt_trx; }
+    }
+  }
+  
+  // Write rows
+  function writeRow(rowNum, vals, opts = {}) {
+    const isSub = opts.subtotal, isGrand = opts.grand;
+    vals.forEach((v, i) => {
+      const cell = ws.getCell(rowNum, i + 1);
+      cell.value = v;
+      let cellOpts = {};
+      if (isGrand) {
+        cellOpts.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+        cellOpts.fill = COLOR_TOTAL;
+      } else if (isSub) {
+        cellOpts.font = { bold: true };
+        cellOpts.fill = COLOR_SUBGRUP;
+      } else if (opts.fillByCol && opts.fillByCol[i]) {
+        cellOpts.fill = opts.fillByCol[i];
+      }
+      // Number formatting
+      if ([2, 4, 5, 6].includes(i)) {
+        cellOpts.numFmt = ACCOUNTING_FMT;
+        cellOpts.align = 'right';
+      } else if (i === 3) {
+        cellOpts.align = 'center';
+      } else if ([7, 8, 9, 10].includes(i)) {
+        cellOpts.align = 'center';
+      } else if (i === 0) {
+        cellOpts.align = 'center';
+      } else {
+        cellOpts.align = 'left'; cellOpts.wrap = true;
+      }
+      styleDataCell(cell, cellOpts);
+    });
+  }
+  
+  const sortedKeys = [...groups.keys()].sort();
+  let rowNum = 5;
+  let currentDate = null;
+  let dateGroups = [];
+  const grand = newGrandAcc();
+  
+  function pushSubtotal() {
+    const s = sumGroups(dateGroups);
+    writeRow(rowNum, [
+      `Subtotal ${currentDate}`,
+      bankCode === 'BRI' ? `${dateGroups.length} settlement(s)` : `${dateGroups.length} tipe`,
+      s.amt_setl, s.trx_qty, s.gross, s.mdr, s.net,
+      `${s.exact_qty} / ${fmt(s.exact_amt)}`,
+      `${s.review_qty} / ${fmt(s.review_amt)}`,
+      `${s.ambig_qty} / ${fmt(s.ambig_amt)}`,
+      `${s.unmatch_qty} / ${fmt(s.unmatch_amt)}`,
+    ], { subtotal: true });
+    rowNum++;
+  }
+  
+  for (const key of sortedKeys) {
+    const g = groups.get(key);
+    if (currentDate && currentDate !== g.tgl_rk) {
+      pushSubtotal();
+      dateGroups = [];
+    }
+    currentDate = g.tgl_rk;
+    dateGroups.push(g);
+    accGrand(grand, g);
+    
+    const fillByCol = {};
+    if (g.exact_qty > 0) fillByCol[7] = COLOR_EXACT;
+    if (g.review_qty > 0) fillByCol[8] = COLOR_REVIEW;
+    if (g.ambig_qty > 0) fillByCol[9] = COLOR_AMBIG;
+    if (g.unmatch_qty > 0) fillByCol[10] = COLOR_UNMATCH;
+    
+    let tipeStr;
+    if (bankCode === 'BRI') tipeStr = [...g.tipes].sort().join(' + ');
+    else if (bankCode === 'BNI') tipeStr = g.jenis;
+    else tipeStr = g.kartu;
+    writeRow(rowNum, [
+      g.tgl_rk, tipeStr, g.amt_setl, g.trx_qty, g.gross, g.mdr, g.net,
+      `${g.exact_qty} / ${fmt(g.exact_amt)}`,
+      `${g.review_qty} / ${fmt(g.review_amt)}`,
+      `${g.ambig_qty} / ${fmt(g.ambig_amt)}`,
+      `${g.unmatch_qty} / ${fmt(g.unmatch_amt)}`,
+    ], { fillByCol });
+    rowNum++;
+  }
+  if (dateGroups.length > 0) pushSubtotal();
+  
+  // Grand total
+  writeRow(rowNum, [
+    'GRAND TOTAL',
+    `${groups.size} ${bankCode === 'BRI' ? 'settlement(s)' : 'group(s)'}`,
+    grand.amt_setl, grand.trx_qty, grand.gross, grand.mdr, grand.net,
+    `${grand.exact_qty} / ${fmt(grand.exact_amt)}`,
+    `${grand.review_qty} / ${fmt(grand.review_amt)}`,
+    `${grand.ambig_qty} / ${fmt(grand.ambig_amt)}`,
+    `${grand.unmatch_qty} / ${fmt(grand.unmatch_amt)}`,
+  ], { grand: true });
+  ws.getRow(rowNum).height = 22;
+  rowNum++;
+  
+  // Legenda
+  rowNum += 2;
+  ws.getCell(rowNum, 1).value = 'LEGENDA:';
+  ws.getCell(rowNum, 1).font = { name: 'Arial', size: 10, bold: true };
+  rowNum++;
+  
+  const legenda = [
+    ['Match Exact', `Bank ↔ POS dengan label POS = ${bankCode}. Bisa langsung di-settle.`, COLOR_EXACT],
+    ['Match Review', `Bank ↔ POS dengan label POS bukan ${bankCode}. Amount cocok tapi label salah — koreksi label POS.`, COLOR_REVIEW],
+    ['Ambiguous', 'Bank punya >1 kandidat POS. PERLU REVIEW MANUAL — lihat sheet "All Transactions".', COLOR_AMBIG],
+    ['Unmatch Bank', 'Bank ada, POS tidak ada sama sekali. Cek outlet lain atau missing entry POS.', COLOR_UNMATCH],
+  ];
+  legenda.forEach(([label, desc, fill]) => {
+    const c1 = ws.getCell(rowNum, 1);
+    c1.value = label;
+    styleDataCell(c1, { font: { bold: true }, fill, align: 'center' });
+    const c2 = ws.getCell(rowNum, 2);
+    c2.value = desc;
+    styleDataCell(c2, { align: 'left', wrap: true });
+    ws.mergeCells(rowNum, 2, rowNum, 11);
+    rowNum++;
+  });
+  
+  const widths = bankCode === 'BRI'
+    ? [12, 32, 14, 6, 14, 11, 14, 16, 16, 16, 16]
+    : [12, 12, 16, 6, 14, 11, 14, 16, 16, 16, 16];
+  widths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 4 }];
+}
+
+// ============================================================
+// SHEET 1 (MANDIRI variant): Summary dengan struktur khusus
+// ============================================================
+// Kolom: Tgl Trx | Tgl Cair | Tipe File | Group Key | Net Settlement
+//        | Trx | Gross | MDR | Net | Exact | Review | Ambig | Unmatch
+// Group:
+//   CC/DEBIT: per (tgl_trx + payment_batch)
+//   QR:       per (tgl_trx + bank_account)
+function buildSummarySheetMandiri(wb, results, bankSettlements, outletName) {
+  const ws = wb.addWorksheet('Summary');
+  ws.getCell('A1').value = `CC/QRIS Payment Reconciliation Summary - MANDIRI`;
+  ws.getCell('A1').font = { name: 'Arial', size: 12, bold: true };
+  ws.mergeCells('A1:M1');
+  ws.getCell('A2').value = `Outlet: ${outletName.toUpperCase()} | Bank: MANDIRI`;
+  ws.getCell('A2').font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF666666' } };
+  ws.mergeCells('A2:M2');
+
+  const headers = ['Tgl Trx', 'Tgl Cair', 'Tipe File', 'Group Key', 'Net Settlement',
+                   'Trx', 'Gross', 'MDR', 'Net',
+                   'Exact Qty / Amt', 'Review Qty / Amt', 'Ambig Qty / Amt', 'Unmatch Qty / Amt'];
+  headers.forEach((h, i) => {
+    const cell = ws.getCell(4, i + 1);
+    cell.value = h;
+    styleHeader(cell, COLOR_HEADER);
+  });
+  ws.getRow(4).height = 30;
+
+  // === Build setlByBatch + setlByAcctDate ===
+  const setlByBatch = new Map();
+  const setlByAcctDate = new Map();
+  for (const s of bankSettlements) {
+    if (s.file_type === 'CC_DEBIT' && s.payment_batch) {
+      setlByBatch.set(s.payment_batch, (setlByBatch.get(s.payment_batch) || 0) + s.net);
+    } else if (s.file_type === 'QR') {
+      const key = `${s.bank_account || ''}|${s.payment_date || ''}`;
+      setlByAcctDate.set(key, (setlByAcctDate.get(key) || 0) + s.net);
+    }
+  }
+
+  // === Build groups ===
+  const groups = new Map();
+  for (const r of results) {
+    const b = r.bank;
+    const ft = b.mandiri_file_type || 'CC_DEBIT';
+    const groupKey = b.remark_rk || '(no-key)';
+    const key = `${b.tgl_trx}|${ft}|${groupKey}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        ...newGrandAcc(),
+        tgl_trx: b.tgl_trx, tgl_cair: b.tgl_rk,
+        file_type: ft, group_key: groupKey,
+        bank_account: b.bank_account || '',
+        amt_setl: 0,
+      });
+    }
+    const g = groups.get(key);
+    g.trx_qty++; g.gross += b.amt_trx; g.mdr += b.disc_amt; g.net += b.net_amt;
+    if (r.status === 'MATCH_EXACT') { g.exact_qty++; g.exact_amt += b.amt_trx; }
+    else if (r.status === 'MATCH_REVIEW') { g.review_qty++; g.review_amt += b.amt_trx; }
+    else if (r.status === 'AMBIGUOUS' || r.status === 'AMBIGUOUS_REVIEW') { g.ambig_qty++; g.ambig_amt += b.amt_trx; }
+    else { g.unmatch_qty++; g.unmatch_amt += b.amt_trx; }
+  }
+  for (const g of groups.values()) {
+    if (g.file_type === 'CC_DEBIT') {
+      g.amt_setl = setlByBatch.get(g.group_key) || g.net;
+    } else {
+      const lookupKey = `${g.bank_account}|${g.tgl_cair}`;
+      g.amt_setl = setlByAcctDate.get(lookupKey) || g.net;
+    }
+  }
+
+  // Helper untuk write row
+  function writeRow(rowNum, vals, opts = {}) {
+    const isSub = opts.subtotal, isGrand = opts.grand;
+    vals.forEach((v, i) => {
+      const cell = ws.getCell(rowNum, i + 1);
+      cell.value = v;
+      let cellOpts = {};
+      if (isGrand) {
+        cellOpts.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+        cellOpts.fill = COLOR_TOTAL;
+      } else if (isSub) {
+        cellOpts.font = { bold: true };
+        cellOpts.fill = COLOR_SUBGRUP;
+      } else if (opts.fillByCol && opts.fillByCol[i]) {
+        cellOpts.fill = opts.fillByCol[i];
+      }
+      // Number formatting: kolom Net Settlement (4), Gross (6), MDR (7), Net (8)
+      if ([4, 6, 7, 8].includes(i)) {
+        cellOpts.numFmt = ACCOUNTING_FMT;
+        cellOpts.align = 'right';
+      } else if (i === 5) {
+        cellOpts.align = 'center'; // Trx count
+      } else if ([9, 10, 11, 12].includes(i)) {
+        cellOpts.align = 'center';
+      } else if (i === 0 || i === 1 || i === 2) {
+        cellOpts.align = 'center';
+      } else {
+        cellOpts.align = 'left'; cellOpts.wrap = true;
+      }
+      styleDataCell(cell, cellOpts);
+    });
+  }
+
+  // Sort keys: tgl_trx ASC, file_type ASC (CC dulu), group_key ASC
+  const sortedKeys = [...groups.keys()].sort((a, b) => {
+    const ga = groups.get(a), gb = groups.get(b);
+    let cmp = ga.tgl_trx.localeCompare(gb.tgl_trx);
+    if (cmp !== 0) return cmp;
+    cmp = ga.file_type.localeCompare(gb.file_type);
+    if (cmp !== 0) return cmp;
+    return ga.group_key.localeCompare(gb.group_key);
+  });
+
+  let rowNum = 5;
+  let currentDate = null;
+  let dateGroups = [];
+  const grand = newGrandAcc();
+
+  function pushSubtotal() {
+    const s = sumGroups(dateGroups);
+    writeRow(rowNum, [
+      `Subtotal ${currentDate}`, '', '', `(${dateGroups.length} group)`,
+      s.amt_setl, s.trx_qty, s.gross, s.mdr, s.net,
+      `${s.exact_qty} / ${fmt(s.exact_amt)}`,
+      `${s.review_qty} / ${fmt(s.review_amt)}`,
+      `${s.ambig_qty} / ${fmt(s.ambig_amt)}`,
+      `${s.unmatch_qty} / ${fmt(s.unmatch_amt)}`,
+    ], { subtotal: true });
+    rowNum++;
+  }
+
+  for (const key of sortedKeys) {
+    const g = groups.get(key);
+    if (currentDate && currentDate !== g.tgl_trx) {
+      pushSubtotal();
+      dateGroups = [];
+    }
+    currentDate = g.tgl_trx;
+    dateGroups.push(g);
+    accGrand(grand, g);
+
+    const fillByCol = {};
+    if (g.exact_qty > 0) fillByCol[9] = COLOR_EXACT;
+    if (g.review_qty > 0) fillByCol[10] = COLOR_REVIEW;
+    if (g.ambig_qty > 0) fillByCol[11] = COLOR_AMBIG;
+    if (g.unmatch_qty > 0) fillByCol[12] = COLOR_UNMATCH;
+
+    const ftLabel = g.file_type === 'CC_DEBIT' ? 'CC/DEBIT' : 'QR';
+    const keyLabel = g.file_type === 'CC_DEBIT'
+      ? `Batch ${g.group_key}`
+      : `Acct ${g.bank_account}`;
+
+    writeRow(rowNum, [
+      g.tgl_trx, g.tgl_cair, ftLabel, keyLabel,
+      g.amt_setl, g.trx_qty, g.gross, g.mdr, g.net,
+      `${g.exact_qty} / ${fmt(g.exact_amt)}`,
+      `${g.review_qty} / ${fmt(g.review_amt)}`,
+      `${g.ambig_qty} / ${fmt(g.ambig_amt)}`,
+      `${g.unmatch_qty} / ${fmt(g.unmatch_amt)}`,
+    ], { fillByCol });
+    rowNum++;
+  }
+  if (dateGroups.length > 0) pushSubtotal();
+
+  writeRow(rowNum, [
+    'GRAND TOTAL', '', '', `(${groups.size} group)`,
+    grand.amt_setl, grand.trx_qty, grand.gross, grand.mdr, grand.net,
+    `${grand.exact_qty} / ${fmt(grand.exact_amt)}`,
+    `${grand.review_qty} / ${fmt(grand.review_amt)}`,
+    `${grand.ambig_qty} / ${fmt(grand.ambig_amt)}`,
+    `${grand.unmatch_qty} / ${fmt(grand.unmatch_amt)}`,
+  ], { grand: true });
+  ws.getRow(rowNum).height = 22;
+  rowNum++;
+
+  // Legenda
+  rowNum += 2;
+  ws.getCell(rowNum, 1).value = 'LEGENDA:';
+  ws.getCell(rowNum, 1).font = { name: 'Arial', size: 10, bold: true };
+  rowNum++;
+  const legenda = [
+    ['Match Exact',  `Bank ↔ POS dengan label POS = MANDIRI dan jenis sesuai. Bisa langsung di-settle.`, COLOR_EXACT],
+    ['Match Review', `Amount cocok tapi label POS bukan MANDIRI. Koreksi label POS.`, COLOR_REVIEW],
+    ['Ambiguous',    'Bank punya >1 kandidat POS. PERLU REVIEW MANUAL — lihat sheet "All Transactions".', COLOR_AMBIG],
+    ['Unmatch Bank', 'Bank ada, POS tidak ada sama sekali. Cek outlet lain atau missing entry POS.', COLOR_UNMATCH],
+  ];
+  legenda.forEach(([label, desc, fill]) => {
+    const c1 = ws.getCell(rowNum, 1);
+    c1.value = label;
+    styleDataCell(c1, { font: { bold: true }, fill, align: 'center' });
+    const c2 = ws.getCell(rowNum, 2);
+    c2.value = desc;
+    styleDataCell(c2, { align: 'left', wrap: true });
+    ws.mergeCells(rowNum, 2, rowNum, 13);
+    rowNum++;
+  });
+
+  // Column widths
+  const widths = [11, 11, 10, 28, 16, 6, 14, 11, 14, 16, 16, 16, 16];
+  widths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 4 }];
+}
+
+// ============================================================
+// SHEET 2: ALL TRANSACTIONS (Match + Unmatch + Ambig)
+// ============================================================
+function buildAllTrxSheet(wb, results, bankCode, outletName) {
+  const ws = wb.addWorksheet('All Transactions');
+  ws.getCell('A1').value = `ALL TRANSACTIONS - ${bankCode} (Match + Unmatch + Ambig)`;
+  ws.getCell('A1').font = { name: 'Arial', size: 12, bold: true };
+  ws.getCell('A2').value = `Outlet: ${outletName.toUpperCase()} | Bank: ${bankCode}`;
+  ws.getCell('A2').font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF666666' } };
+  
+  // Define columns based on bank
+  // Common: Status | POS (5 cols) | BANK (varies) | Notes
+  const posCols = ['Tgl POS', 'Bill No', 'Art Description', 'Internal Ref', 'Amount POS'];
+  const bankColsBRI = ['Tgl Trx', 'Tgl Cair', 'Settlement Batch', 'Tipe', 'Approval', 'Card Number', 'Card Type', 'Issuer', 'Gross', 'MDR', 'Net'];
+  const bankColsBCA = ['Tgl Trx', 'Tgl Cair', 'Tipe Trx', 'Approval', 'Card Number', 'Kartu', 'Card Type', 'Gross', 'MDR', 'Net'];
+  const bankColsBNI = ['Tgl Trx', 'Tgl Cair', 'Jenis', 'Principle', 'Approval', 'Card Number', 'Issuer', 'Gross', 'MDR', 'Net'];
+  const bankColsMandiri = ['Tgl Trx', 'Tgl Cair', 'Tipe File', 'Jenis', 'Principle', 'Card', 'Auth/Ref', 'Pay Batch / Acct', 'Gross', 'MDR', 'Net'];
+  let bankCols;
+  if (bankCode === 'BRI') bankCols = bankColsBRI;
+  else if (bankCode === 'BNI') bankCols = bankColsBNI;
+  else if (bankCode === 'MANDIRI') bankCols = bankColsMandiri;
+  else bankCols = bankColsBCA;
+  
+  const totalCols = 1 + posCols.length + bankCols.length + 1; // status + POS + Bank + Notes
+  const lastColLetter = String.fromCharCode(64 + totalCols);  // A=65
+  ws.mergeCells(`A1:${lastColLetter}1`);
+  ws.mergeCells(`A2:${lastColLetter}2`);
+  
+  // Section headers (row 4)
+  ws.getCell(4, 1).value = 'Status';
+  styleHeader(ws.getCell(4, 1), COLOR_HEADER);
+  ws.mergeCells(4, 1, 5, 1);
+  
+  ws.getCell(4, 2).value = 'POS (Sistem)';
+  styleHeader(ws.getCell(4, 2), COLOR_HEADER_POS);
+  ws.mergeCells(4, 2, 4, 1 + posCols.length);
+  
+  const bankSecStart = 2 + posCols.length;
+  ws.getCell(4, bankSecStart).value = `BANK (${bankCode})`;
+  styleHeader(ws.getCell(4, bankSecStart), COLOR_HEADER_BANK);
+  ws.mergeCells(4, bankSecStart, 4, bankSecStart + bankCols.length - 1);
+  
+  const notesCol = bankSecStart + bankCols.length;
+  ws.getCell(4, notesCol).value = 'Notes';
+  styleHeader(ws.getCell(4, notesCol), COLOR_HEADER);
+  ws.mergeCells(4, notesCol, 5, notesCol);
+  
+  // Detail headers (row 5)
+  posCols.forEach((h, i) => {
+    const cell = ws.getCell(5, 2 + i);
+    cell.value = h;
+    styleHeader(cell, COLOR_HEADER);
+  });
+  bankCols.forEach((h, i) => {
+    const cell = ws.getCell(5, bankSecStart + i);
+    cell.value = h;
+    styleHeader(cell, COLOR_HEADER);
+  });
+  ws.getRow(4).height = 22;
+  ws.getRow(5).height = 30;
+  
+  // Sort results
+  const sorted = [...results].sort((a, b) => {
+    const cmp = a.bank.tgl_trx.localeCompare(b.bank.tgl_trx);
+    if (cmp !== 0) return cmp;
+    const order = { 'MATCH_EXACT': 1, 'MATCH_REVIEW': 2, 'AMBIGUOUS': 3, 'AMBIGUOUS_REVIEW': 4, 'UNMATCH_BANK': 5 };
+    return (order[a.status] || 9) - (order[b.status] || 9);
+  });
+  
+  let rowNum = 6;
+  for (const r of sorted) {
+    const b = r.bank;
+    const p = r.pos;
+    
+    let statusLabel, fillColor;
+    if (r.status === 'MATCH_EXACT')        { statusLabel = 'EXACT';   fillColor = COLOR_EXACT; }
+    else if (r.status === 'MATCH_REVIEW')  { statusLabel = 'REVIEW';  fillColor = COLOR_REVIEW; }
+    else if (r.status === 'AMBIGUOUS')     { statusLabel = 'AMBIG';   fillColor = COLOR_AMBIG; }
+    else if (r.status === 'AMBIGUOUS_REVIEW') { statusLabel = 'AMBIG-REV'; fillColor = COLOR_AMBIG; }
+    else                                   { statusLabel = 'UNMATCH'; fillColor = COLOR_UNMATCH; }
+    
+    // POS values
+    const posVals = p ? [p.pos_date, p.bill_no, p.payment_type, p.ref_short, p.amount]
+                      : ['', '', '', '', ''];
+    
+    // Bank values
+    let bankVals;
+    if (bankCode === 'BRI') {
+      bankVals = [b.tgl_trx, b.tgl_rk, b.remark_rk, b.tipe || '', b.aprv || '', b.card || '', '', b.principle || '', b.amt_trx, b.disc_amt, b.net_amt];
+    } else if (bankCode === 'BNI') {
+      bankVals = [b.tgl_trx, b.tgl_rk, b.tipe || '', b.principle || '', b.aprv || '', b.card || '', b.issuer || '', b.amt_trx, b.disc_amt, b.net_amt];
+    } else if (bankCode === 'MANDIRI') {
+      // Cols: Tgl Trx | Tgl Cair | Tipe File | Jenis | Principle | Card | Auth/Ref | Pay Batch / Acct | Gross | MDR | Net
+      bankVals = [b.tgl_trx, b.tgl_rk, b.mandiri_file_type || '', b.tipe || '', b.principle || '', b.card || '', b.aprv || '', b.remark_rk || '', b.amt_trx, b.disc_amt, b.net_amt];
+    } else {
+      bankVals = [b.tgl_trx, b.tgl_rk, b.tipe_full || b.tipe || '', b.aprv || '', b.card || '', b.principle || '', b.issuer || '', b.amt_trx, b.disc_amt, b.net_amt];
+    }
+    
+    // Notes — pakai buildNotesFor (single source of truth, sama dengan HTML render)
+    const notesStr = buildNotesFor(r, bankCode);
+    
+    // Write all cells
+    const allVals = [statusLabel, ...posVals, ...bankVals, notesStr];
+    const posAmtIdx = 1 + 4; // 'Amount POS' adalah kolom ke-6 (0-indexed 5)
+    const bankAmtStart = bankSecStart - 1;       // 0-indexed
+    const bankAmtCount = bankCols.length;        // last 3 = gross/mdr/net
+    
+    allVals.forEach((v, i) => {
+      const cell = ws.getCell(rowNum, i + 1);
+      cell.value = v;
+      const cellOpts = { fill: fillColor };
+      
+      // Number formatting: Amount POS (idx 5) dan 3 kolom terakhir bank (gross/mdr/net)
+      const isPosAmount = (i === posAmtIdx);
+      const isBankAmount = (i >= bankSecStart - 1 + bankCols.length - 3 && i < bankSecStart - 1 + bankCols.length);
+      
+      if (isPosAmount || isBankAmount) {
+        cellOpts.numFmt = ACCOUNTING_FMT;
+        cellOpts.align = 'right';
+      } else if (i === 0) { // Status
+        cellOpts.align = 'center';
+        cellOpts.font = { bold: true };
+      } else if (i === notesCol - 1) { // Notes
+        cellOpts.align = 'left'; cellOpts.wrap = true;
+      } else {
+        cellOpts.align = 'center';
+      }
+      styleDataCell(cell, cellOpts);
+    });
+    rowNum++;
+  }
+  
+  // Column widths
+  let widths;
+  if (bankCode === 'BRI') {
+    widths = [10, 12, 9, 18, 14, 14, 12, 12, 30, 12, 13, 18, 12, 14, 14, 11, 14, 50];
+  } else if (bankCode === 'BNI') {
+    widths = [10, 12, 9, 18, 14, 14, 12, 12, 12, 12, 13, 18, 12, 14, 11, 14, 50];
+  } else if (bankCode === 'MANDIRI') {
+    // Status | POS(5) | Bank(11) | Notes
+    widths = [10, 12, 9, 18, 14, 14, 11, 11, 10, 9, 12, 18, 13, 18, 14, 11, 14, 50];
+  } else {
+    widths = [10, 12, 9, 18, 14, 14, 12, 12, 10, 13, 18, 12, 12, 14, 11, 14, 50];
+  }
+  widths.forEach((w, i) => { if (i < totalCols) ws.getColumn(i + 1).width = w; });
+  
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 5 }];
+}
+
+// ============================================================
+// SHEET 3: UNMATCH POS
+// ============================================================
+function buildUnmatchPosSheetV2(wb, results, unmatchPos, bankCode, outletName) {
+  const ws = wb.addWorksheet('Unmatch POS');
+  ws.getCell('A1').value = `UNMATCHED POS - Label ${bankCode} tapi Tidak Ada di Laporan Bank`;
+  ws.getCell('A1').font = { name: 'Arial', size: 12, bold: true };
+  ws.mergeCells('A1:I1');
+  ws.getCell('A2').value = `Outlet: ${outletName.toUpperCase()} | Cross-reference ke sheet "All Transactions"`;
+  ws.getCell('A2').font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF666666' } };
+  ws.mergeCells('A2:I2');
+  
+  const cols = ['Status', 'Tgl POS', 'Bill No', 'Art Description', 'Internal Ref',
+                'Amount POS', 'Bank Suspect', 'Possible Cause', 'Cross-Ref'];
+  cols.forEach((h, i) => {
+    const cell = ws.getCell(4, i + 1);
+    cell.value = h;
+    styleHeader(cell, COLOR_HEADER);
+  });
+  ws.getRow(4).height = 30;
+  
+  // Build cross-ref dari ambig
+  const ambigList = results.filter(r => r.status === 'AMBIGUOUS' || r.status === 'AMBIGUOUS_REVIEW');
+  const posInAmbig = new Map();
+  for (const r of ambigList) {
+    for (const c of (r.candidates || [])) {
+      const key = `${c.pos_date}|${c.bill_no}|${c.internal_ref}`;
+      posInAmbig.set(key, { aprv: r.bank.aprv, tgl: r.bank.tgl_trx });
+    }
+  }
+  
+  const sorted = [...unmatchPos].sort((a, b) => {
+    const cmp = a.pos_date.localeCompare(b.pos_date);
+    if (cmp !== 0) return cmp;
+    return parseInt(a.bill_no) - parseInt(b.bill_no);
+  });
+  
+  let rowNum = 5;
+  for (const p of sorted) {
+    const key = `${p.pos_date}|${p.bill_no}|${p.internal_ref}`;
+    let cause, crossRef;
+    if (posInAmbig.has(key)) {
+      const ref = posInAmbig.get(key);
+      cause = 'Bagian dari case ambiguous — kandidat di sheet All Transactions';
+      crossRef = `Aprv ${ref.aprv} (${ref.tgl})`;
+    } else if (p.amount < 5000) {
+      cause = 'Amount sangat kecil — kemungkinan refund/test/pembulatan';
+      crossRef = '-';
+    } else {
+      cause = 'Tidak ada di laporan bank — tunggu file bank berikutnya atau cek manual';
+      crossRef = '-';
+    }
+    
+    const vals = ['UNMATCH POS', p.pos_date, p.bill_no, p.payment_type, p.ref_short, p.amount, bankCode, cause, crossRef];
+    vals.forEach((v, i) => {
+      const cell = ws.getCell(rowNum, i + 1);
+      cell.value = v;
+      const cellOpts = { fill: COLOR_UNMATCH };
+      if (i === 5) { cellOpts.numFmt = ACCOUNTING_FMT; cellOpts.align = 'right'; }
+      else if (i === 0) { cellOpts.align = 'center'; cellOpts.font = { bold: true }; }
+      else if (i === 7 || i === 8) { cellOpts.align = 'left'; cellOpts.wrap = true; }
+      else { cellOpts.align = 'center'; }
+      styleDataCell(cell, cellOpts);
+    });
+    ws.getRow(rowNum).height = 30;
+    rowNum++;
+  }
+  
+  const widths = [13, 12, 9, 18, 14, 14, 13, 55, 40];
+  widths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 4 }];
+}
+
+
+</script>
+</body>
+</html>
